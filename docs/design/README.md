@@ -92,6 +92,19 @@ RESTful APIとSSEの仕様を定義します。
 - アクセシビリティ
 - アニメーション・トランジション
 
+
+### 6. [高度設計トピック考察](./advanced_topics_consideration.md)
+
+グループ活動UI、教師向け6階層分析、WASM計算基盤、キャッシュ、アクセシビリティ、運用品質を横断的に整理します。
+
+**内容**:
+- GroupActivity中心の画面責務分離
+- 教師分析UIの6レベル階層
+- Rust+WASMによるUMAP/クラスタリング段階移行
+- IndexedDB + React Queryの二層キャッシュ
+- ARIA/ショートカット設計
+- テスト・監視・CI/CD・バックアップ運用
+
 ---
 
 ## 設計の流れ
