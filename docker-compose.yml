@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16
+    container_name: sf-prototyping-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sf
+      POSTGRES_PASSWORD: sf_password
+      POSTGRES_DB: sf_prototyping
+    ports:
+      - "5432:5432"
+    volumes:
+      - sf_prototyping_pgdata:/var/lib/postgresql/data
+
+volumes:
+  sf_prototyping_pgdata:
+
