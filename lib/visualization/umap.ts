@@ -3,12 +3,14 @@ import { UMAP } from 'umap-js'
 export interface UMAPInput {
   studentId: string
   name: string | null
+  isSelf?: boolean
   vector: number[]
 }
 
 export interface UMAPResult {
   studentId: string
   name: string | null
+  isSelf?: boolean
   x: number
   y: number
 }
@@ -26,6 +28,7 @@ export function computeUMAP(
     return inputs.map((inp, i) => ({
       studentId: inp.studentId,
       name: inp.name,
+      isSelf: inp.isSelf,
       x: i * 0.5,
       y: 0,
     }))
@@ -46,6 +49,7 @@ export function computeUMAP(
   return inputs.map((inp, i) => ({
     studentId: inp.studentId,
     name: inp.name,
+    isSelf: inp.isSelf,
     x: embedding[i][0],
     y: embedding[i][1],
   }))

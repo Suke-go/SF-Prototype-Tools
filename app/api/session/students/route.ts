@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getAuthContext, requireTeacher } from '@/lib/middleware/auth'
 
-// セッション内の学生一覧を取得（管理者ダッシュボード用）
 export async function GET(request: NextRequest) {
   try {
+    const auth = requireTeacher(await getAuthContext(request))
     const sessionId = new URL(request.url).searchParams.get('sessionId')
     if (!sessionId) {
       return NextResponse.json(
@@ -12,23 +13,30 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
-      select: { id: true, themeId: true },
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, schoolId: auth.schoolId, teacherId: auth.teacherId },
+      select: {
+        id: true,
+        themeId: true,
+        selectableThemes: {
+          select: { themeId: true },
+        },
+      },
     })
     if (!session) {
       return NextResponse.json(
-        { success: false, error: { code: 'SESSION_NOT_FOUND', message: 'セッションが見つかりません' } },
-        { status: 404 }
+        { success: false, error: { code: 'FORBIDDEN', message: 'このセッションを参照する権限がありません' } },
+        { status: 403 }
       )
     }
 
-    // 質問数を取得
+    const allowedThemeIds =
+      session.selectableThemes.length > 0 ? session.selectableThemes.map((entry) => entry.themeId) : [session.themeId]
+
     const questionCount = await prisma.question.count({
-      where: { themeId: session.themeId },
+      where: { themeId: { in: allowedThemeIds } },
     })
 
-    // 学生一覧（Big Five + 回答数）
     const students = await prisma.student.findMany({
       where: { sessionId },
       orderBy: { joinedAt: 'desc' },
@@ -47,57 +55,84 @@ export async function GET(request: NextRequest) {
             openness: true,
           },
         },
-        _count: {
-          select: {
-            responses: true,
-          },
-        },
+        _count: { select: { responses: true } },
       },
     })
 
-    // 進捗統計
     const stats = {
       total: students.length,
-      notStarted: students.filter((s) => s.progressStatus === 'NOT_STARTED').length,
-      bigFive: students.filter((s) => s.progressStatus === 'BIG_FIVE').length,
-      themeSelection: students.filter((s) => s.progressStatus === 'THEME_SELECTION').length,
-      questions: students.filter((s) => s.progressStatus === 'QUESTIONS').length,
-      completed: students.filter((s) => s.progressStatus === 'COMPLETED').length,
+      notStarted: students.filter((student) => student.progressStatus === 'NOT_STARTED').length,
+      bigFive: students.filter((student) => student.progressStatus === 'BIG_FIVE').length,
+      themeSelection: students.filter((student) => student.progressStatus === 'THEME_SELECTION').length,
+      briefing: students.filter((student) => student.progressStatus === 'BRIEFING').length,
+      questions: students.filter((student) => student.progressStatus === 'QUESTIONS').length,
+      completed: students.filter((student) => student.progressStatus === 'COMPLETED').length,
       questionCount,
     }
 
-    // Big Five平均
-    const bfStudents = students.filter((s) => s.bigFiveResult)
-    const bigFiveAvg = bfStudents.length > 0
-      ? {
-          extraversion: Math.round((bfStudents.reduce((s, st) => s + (st.bigFiveResult?.extraversion ?? 0), 0) / bfStudents.length) * 10) / 10,
-          agreeableness: Math.round((bfStudents.reduce((s, st) => s + (st.bigFiveResult?.agreeableness ?? 0), 0) / bfStudents.length) * 10) / 10,
-          conscientiousness: Math.round((bfStudents.reduce((s, st) => s + (st.bigFiveResult?.conscientiousness ?? 0), 0) / bfStudents.length) * 10) / 10,
-          neuroticism: Math.round((bfStudents.reduce((s, st) => s + (st.bigFiveResult?.neuroticism ?? 0), 0) / bfStudents.length) * 10) / 10,
-          openness: Math.round((bfStudents.reduce((s, st) => s + (st.bigFiveResult?.openness ?? 0), 0) / bfStudents.length) * 10) / 10,
-        }
-      : null
+    const bfStudents = students.filter((student) => student.bigFiveResult)
+    const bigFiveAvg =
+      bfStudents.length > 0
+        ? {
+            extraversion:
+              Math.round(
+                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.extraversion ?? 0), 0) /
+                  bfStudents.length) *
+                  10
+              ) / 10,
+            agreeableness:
+              Math.round(
+                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.agreeableness ?? 0), 0) /
+                  bfStudents.length) *
+                  10
+              ) / 10,
+            conscientiousness:
+              Math.round(
+                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.conscientiousness ?? 0), 0) /
+                  bfStudents.length) *
+                  10
+              ) / 10,
+            neuroticism:
+              Math.round(
+                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.neuroticism ?? 0), 0) /
+                  bfStudents.length) *
+                  10
+              ) / 10,
+            openness:
+              Math.round(
+                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.openness ?? 0), 0) /
+                  bfStudents.length) *
+                  10
+              ) / 10,
+          }
+        : null
 
     return NextResponse.json({
       success: true,
       data: {
-        students: students.map((s) => ({
-          id: s.id,
-          name: s.name,
-          progressStatus: s.progressStatus,
-          joinedAt: s.joinedAt.toISOString(),
-          lastAccessAt: s.lastAccessAt.toISOString(),
-          bigFive: s.bigFiveResult,
-          responseCount: s._count.responses,
+        students: students.map((student) => ({
+          id: student.id,
+          name: student.name,
+          progressStatus: student.progressStatus,
+          joinedAt: student.joinedAt.toISOString(),
+          lastAccessAt: student.lastAccessAt.toISOString(),
+          bigFive: student.bigFiveResult,
+          responseCount: student._count.responses,
         })),
         stats,
         bigFiveAvg,
       },
     })
   } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'ログインが必要です' } },
+        { status: 401 }
+      )
+    }
     console.error('Session students fetch error:', error)
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
+      { success: false, error: { code: 'INTERNAL_ERROR', message: '学生情報の取得に失敗しました' } },
       { status: 500 }
     )
   }

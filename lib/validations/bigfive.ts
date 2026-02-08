@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 
 export const bigFiveAnswerSchema = z.object({
   questionNumber: z.number().int().min(1).max(10),
@@ -6,10 +6,8 @@ export const bigFiveAnswerSchema = z.object({
 })
 
 export const saveBigFiveSchema = z.object({
-  sessionId: z.string().uuid('セッションIDが不正です'),
-  studentId: z.string().uuid('学生IDが不正です'),
+  sessionId: z.string().uuid('sessionIdの形式が不正です'),
   answers: z.array(bigFiveAnswerSchema).length(10),
 })
 
 export type SaveBigFiveInput = z.infer<typeof saveBigFiveSchema>
-

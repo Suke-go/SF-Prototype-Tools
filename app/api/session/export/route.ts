@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getAuthContext, requireTeacher } from '@/lib/middleware/auth'
 
-// セッションデータをJSON/CSV形式でエクスポート
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) return `"${value.replaceAll('"', '""')}"`
+  return value
+}
+
 export async function GET(request: NextRequest) {
   try {
+    const auth = requireTeacher(await getAuthContext(request))
     const url = new URL(request.url)
     const sessionId = url.searchParams.get('sessionId')
     const format = url.searchParams.get('format') || 'json'
@@ -15,22 +21,37 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, schoolId: auth.schoolId, teacherId: auth.teacherId },
       include: {
         theme: true,
+        selectableThemes: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            theme: true,
+          },
+        },
       },
     })
     if (!session) {
       return NextResponse.json(
-        { success: false, error: { code: 'SESSION_NOT_FOUND', message: 'セッションが見つかりません' } },
-        { status: 404 }
+        { success: false, error: { code: 'FORBIDDEN', message: 'このセッションをエクスポートする権限がありません' } },
+        { status: 403 }
       )
     }
 
+    const allowedThemeIds =
+      session.selectableThemes.length > 0 ? session.selectableThemes.map((entry) => entry.themeId) : [session.themeId]
+    const themeOrderMap = new Map(allowedThemeIds.map((themeId, index) => [themeId, index] as const))
+
     const questions = await prisma.question.findMany({
-      where: { themeId: session.themeId },
-      orderBy: { order: 'asc' },
+      where: { themeId: { in: allowedThemeIds } },
+      select: { id: true, order: true, questionText: true, themeId: true },
+    })
+    questions.sort((a, b) => {
+      const themeDiff = (themeOrderMap.get(a.themeId) ?? 999) - (themeOrderMap.get(b.themeId) ?? 999)
+      if (themeDiff !== 0) return themeDiff
+      return a.order - b.order
     })
 
     const students = await prisma.student.findMany({
@@ -42,7 +63,6 @@ export async function GET(request: NextRequest) {
     })
 
     if (format === 'csv') {
-      // CSV形式
       const header = [
         'studentId',
         'name',
@@ -52,26 +72,27 @@ export async function GET(request: NextRequest) {
         'conscientiousness',
         'neuroticism',
         'openness',
-        ...questions.map((q) => `Q${q.order}`),
+        ...questions.map((question, index) => `Q${index + 1}`),
       ].join(',')
 
-      const rows = students.map((s) => {
-        const bf = s.bigFiveResult
+      const rows = students.map((student) => {
+        const bf = student.bigFiveResult
         const responseMap: Record<string, string> = {}
-        for (const r of s.responses) {
-          responseMap[r.questionId] = r.responseValue
-        }
+        for (const response of student.responses) responseMap[response.questionId] = response.responseValue
+
         return [
-          s.id,
-          s.name || '匿名',
-          s.progressStatus,
-          bf?.extraversion ?? '',
-          bf?.agreeableness ?? '',
-          bf?.conscientiousness ?? '',
-          bf?.neuroticism ?? '',
-          bf?.openness ?? '',
-          ...questions.map((q) => responseMap[q.id] || ''),
-        ].join(',')
+          student.id,
+          student.name || '匿名',
+          student.progressStatus,
+          bf?.extraversion?.toString() ?? '',
+          bf?.agreeableness?.toString() ?? '',
+          bf?.conscientiousness?.toString() ?? '',
+          bf?.neuroticism?.toString() ?? '',
+          bf?.openness?.toString() ?? '',
+          ...questions.map((question) => responseMap[question.id] || ''),
+        ]
+          .map(csvEscape)
+          .join(',')
       })
 
       const csv = [header, ...rows].join('\n')
@@ -83,37 +104,45 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // JSON形式
+    const selectedThemeTitles =
+      session.selectableThemes.length > 0
+        ? session.selectableThemes.map((entry) => entry.theme.title)
+        : [session.theme.title]
+
     const exportData = {
       session: {
         id: session.id,
         title: session.title,
-        theme: session.theme.title,
+        sessionCode: session.sessionCode,
+        primaryTheme: session.theme.title,
+        selectableThemes: selectedThemeTitles,
         status: session.status,
         createdAt: session.createdAt.toISOString(),
       },
-      questions: questions.map((q) => ({
-        id: q.id,
-        order: q.order,
-        text: q.questionText,
+      questions: questions.map((question, index) => ({
+        id: question.id,
+        order: index + 1,
+        originalOrder: question.order,
+        themeId: question.themeId,
+        text: question.questionText,
       })),
-      students: students.map((s) => ({
-        id: s.id,
-        name: s.name,
-        progressStatus: s.progressStatus,
-        bigFive: s.bigFiveResult
+      students: students.map((student) => ({
+        id: student.id,
+        name: student.name,
+        progressStatus: student.progressStatus,
+        bigFive: student.bigFiveResult
           ? {
-              extraversion: s.bigFiveResult.extraversion,
-              agreeableness: s.bigFiveResult.agreeableness,
-              conscientiousness: s.bigFiveResult.conscientiousness,
-              neuroticism: s.bigFiveResult.neuroticism,
-              openness: s.bigFiveResult.openness,
+              extraversion: student.bigFiveResult.extraversion,
+              agreeableness: student.bigFiveResult.agreeableness,
+              conscientiousness: student.bigFiveResult.conscientiousness,
+              neuroticism: student.bigFiveResult.neuroticism,
+              openness: student.bigFiveResult.openness,
             }
           : null,
-        responses: s.responses.map((r) => ({
-          questionId: r.questionId,
-          value: r.responseValue,
-          answeredAt: r.answeredAt.toISOString(),
+        responses: student.responses.map((response) => ({
+          questionId: response.questionId,
+          value: response.responseValue,
+          answeredAt: response.answeredAt.toISOString(),
         })),
       })),
     }
@@ -125,9 +154,15 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'ログインが必要です' } },
+        { status: 401 }
+      )
+    }
     console.error('Export error:', error)
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
+      { success: false, error: { code: 'INTERNAL_ERROR', message: 'エクスポートに失敗しました' } },
       { status: 500 }
     )
   }

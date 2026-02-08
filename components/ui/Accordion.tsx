@@ -12,13 +12,13 @@ export interface AccordionProps {
 
 export function Accordion({ title, children, defaultOpen = false, className }: AccordionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
-  
+
   return (
     <div className={cn('border border-student-border-secondary rounded-lg overflow-hidden', className)}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-4 py-3 bg-student-bg-tertiary text-left text-student-text-primary hover:bg-student-bg-elevated transition-colors duration-fast flex items-center justify-between"
+        className="w-full px-6 py-4 bg-student-bg-tertiary text-left text-student-text-primary hover:bg-student-bg-elevated transition-colors duration-fast flex items-center justify-between"
         aria-expanded={isOpen}
         aria-controls={`accordion-content-${title}`}
       >
@@ -37,7 +37,7 @@ export function Accordion({ title, children, defaultOpen = false, className }: A
           isOpen ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'
         )}
       >
-        <div className="p-4 bg-student-bg-secondary text-student-text-secondary">
+        <div className="p-6 bg-student-bg-secondary text-student-text-secondary">
           {children}
         </div>
       </div>

@@ -1,19 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getAuthContext } from '@/lib/middleware/auth'
+import { getAuthContext, requireAuth } from '@/lib/middleware/auth'
 
-// セッション内の全回答データを取得（可視化用）
 export async function GET(request: NextRequest) {
   try {
-    const auth = await getAuthContext(request)
-    if (!auth) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '認証が必要です' } },
-        { status: 401 }
-      )
-    }
+    const auth = requireAuth(await getAuthContext(request))
+    const url = new URL(request.url)
+    const sessionId = url.searchParams.get('sessionId')
+    const themeId = url.searchParams.get('themeId')
 
-    const sessionId = new URL(request.url).searchParams.get('sessionId')
     if (!sessionId) {
       return NextResponse.json(
         { success: false, error: { code: 'INVALID_REQUEST', message: 'sessionIdが必要です' } },
@@ -21,34 +16,61 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    if (sessionId !== auth.sessionId) {
+    if (auth.role === 'student' && sessionId !== auth.sessionId) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'セッションが一致しません' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'このセッションにはアクセスできません' } },
         { status: 403 }
       )
     }
 
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
-      select: { id: true, themeId: true },
+    const session = await prisma.session.findFirst({
+      where:
+        auth.role === 'teacher'
+          ? { id: sessionId, schoolId: auth.schoolId, teacherId: auth.teacherId }
+          : { id: sessionId, schoolId: auth.schoolId },
+      select: {
+        id: true,
+        themeId: true,
+        selectableThemes: {
+          select: { themeId: true },
+        },
+      },
     })
+
     if (!session) {
       return NextResponse.json(
-        { success: false, error: { code: 'SESSION_NOT_FOUND', message: 'セッションが見つかりません' } },
-        { status: 404 }
+        { success: false, error: { code: 'FORBIDDEN', message: 'このセッションにアクセスする権限がありません' } },
+        { status: 403 }
       )
     }
 
-    // テーマの質問を順番に取得
+    const allowedThemeIds =
+      session.selectableThemes.length > 0 ? session.selectableThemes.map((entry) => entry.themeId) : [session.themeId]
+
+    const targetThemeIds = themeId ? [themeId] : allowedThemeIds
+    if (targetThemeIds.some((id) => !allowedThemeIds.includes(id))) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'このテーマはセッションで利用できません' } },
+        { status: 403 }
+      )
+    }
+
+    const themeOrderMap = new Map(targetThemeIds.map((id, index) => [id, index] as const))
     const questions = await prisma.question.findMany({
-      where: { themeId: session.themeId },
-      orderBy: { order: 'asc' },
-      select: { id: true, order: true, questionText: true },
+      where: { themeId: { in: targetThemeIds } },
+      select: { id: true, order: true, questionText: true, themeId: true },
+    })
+    questions.sort((a, b) => {
+      const themeDiff = (themeOrderMap.get(a.themeId) ?? 999) - (themeOrderMap.get(b.themeId) ?? 999)
+      if (themeDiff !== 0) return themeDiff
+      return a.order - b.order
     })
 
-    // セッション内の全学生
+    const questionIds = questions.map((question) => question.id)
+
     const students = await prisma.student.findMany({
       where: { sessionId },
+      orderBy: { joinedAt: 'asc' },
       select: {
         id: true,
         name: true,
@@ -65,65 +87,125 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // 全回答
-    const responses = await prisma.studentResponse.findMany({
-      where: { sessionId },
-      select: {
-        studentId: true,
-        questionId: true,
-        responseValue: true,
-      },
+    const responses =
+      questionIds.length > 0
+        ? await prisma.studentResponse.findMany({
+            where: { sessionId, questionId: { in: questionIds } },
+            select: {
+              studentId: true,
+              questionId: true,
+              responseValue: true,
+            },
+          })
+        : []
+
+    const isTeacher = auth.role === 'teacher'
+
+    // Students should not see raw IDs of peers, so pseudonymize by session.
+    const anonymizedIdMap = new Map<string, string>()
+    const shuffledIndices = students.map((_, i) => i)
+    let seed = 0
+    for (const ch of sessionId) seed = (seed * 31 + ch.charCodeAt(0)) | 0
+    for (let i = shuffledIndices.length - 1; i > 0; i--) {
+      seed = (seed * 1103515245 + 12345) | 0
+      const j = ((seed >>> 16) & 0x7fff) % (i + 1)
+      ;[shuffledIndices[i], shuffledIndices[j]] = [shuffledIndices[j], shuffledIndices[i]]
+    }
+    students.forEach((student, index) => {
+      const anonIndex = shuffledIndices[index]
+      const anonId = `P${String(anonIndex + 1).padStart(2, '0')}`
+      anonymizedIdMap.set(student.id, anonId)
     })
 
-    // 学生ごとの回答マップ { studentId: { questionId: value } }
-    const responseMap: Record<string, Record<string, string>> = {}
-    for (const r of responses) {
-      if (!responseMap[r.studentId]) responseMap[r.studentId] = {}
-      responseMap[r.studentId][r.questionId] = r.responseValue
+    const toOutputId = (realStudentId: string) =>
+      isTeacher ? realStudentId : anonymizedIdMap.get(realStudentId) || realStudentId
+
+    const responseMap: Record<string, Record<string, 'YES' | 'NO' | 'UNKNOWN'>> = {}
+    for (const response of responses) {
+      const outputId = toOutputId(response.studentId)
+      if (!responseMap[outputId]) responseMap[outputId] = {}
+      responseMap[outputId][response.questionId] = response.responseValue
     }
 
-    // 25次元ベクトルを構築（20問 + 5 Big Five）
-    const vectors: { studentId: string; name: string | null; vector: number[] }[] = []
+    const questionDistributions = questions.map((question) => {
+      let yes = 0
+      let no = 0
+      let unknown = 0
 
-    for (const student of students) {
-      const qVector = questions.map((q) => {
-        const val = responseMap[student.id]?.[q.id]
-        if (val === 'YES') return 1
-        if (val === 'NO') return -1
-        return 0 // UNKNOWN or missing
+      for (const student of students) {
+        const outputId = toOutputId(student.id)
+        const value = responseMap[outputId]?.[question.id]
+        if (value === 'YES') yes += 1
+        else if (value === 'NO') no += 1
+        else unknown += 1
+      }
+
+      return {
+        questionId: question.id,
+        yes,
+        no,
+        unknown,
+      }
+    })
+
+    const vectors = students.map((student) => {
+      const outputId = toOutputId(student.id)
+      const qVector = questions.map((question) => {
+        const value = responseMap[outputId]?.[question.id]
+        if (value === 'YES') return 1
+        if (value === 'NO') return -1
+        return 0
       })
+      const bigFive = student.bigFiveResult
+      const bfVector =
+        isTeacher && bigFive
+          ? [bigFive.extraversion, bigFive.agreeableness, bigFive.conscientiousness, bigFive.neuroticism, bigFive.openness]
+          : [0, 0, 0, 0, 0]
 
-      const bf = student.bigFiveResult
-      const bfVector = bf
-        ? [bf.extraversion, bf.agreeableness, bf.conscientiousness, bf.neuroticism, bf.openness]
-        : [0, 0, 0, 0, 0]
-
-      vectors.push({
-        studentId: student.id,
-        name: student.name,
+      return {
+        studentId: outputId,
+        name: isTeacher ? student.name : null,
+        isSelf: auth.role === 'student' ? student.id === auth.studentId : false,
         vector: [...qVector, ...bfVector],
-      })
-    }
+      }
+    })
 
     return NextResponse.json({
       success: true,
       data: {
         sessionId,
-        questions: questions.map((q) => ({ id: q.id, order: q.order, text: q.questionText })),
-        students: students.map((s) => ({
-          id: s.id,
-          name: s.name,
-          progressStatus: s.progressStatus,
-          bigFive: s.bigFiveResult,
+        selectedThemeId: themeId || null,
+        questions: questions.map((question) => ({
+          id: question.id,
+          order: question.order,
+          text: question.questionText,
+          themeId: question.themeId,
         })),
+        students: students.map((student) => {
+          const outputId = toOutputId(student.id)
+          return {
+            id: outputId,
+            name: isTeacher ? student.name : null,
+            isSelf: auth.role === 'student' ? student.id === auth.studentId : false,
+            progressStatus: student.progressStatus,
+            bigFive: isTeacher ? student.bigFiveResult : undefined,
+          }
+        }),
         vectors,
-        responseMap,
+        questionDistributions,
+        ...(isTeacher ? { responseMap } : {}),
       },
     })
   } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'ログインが必要です' } },
+        { status: 401 }
+      )
+    }
     console.error('Session responses fetch error:', error)
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
+      { success: false, error: { code: 'INTERNAL_ERROR', message: '回答データの取得に失敗しました' } },
       { status: 500 }
     )
   }

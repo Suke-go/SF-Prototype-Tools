@@ -23,8 +23,11 @@ type ResponseMessage =
     }
   | { type: 'error'; payload: { message: string } }
 
-// eslint-disable-next-line no-restricted-globals
-const ctx: DedicatedWorkerGlobalScope = self as any
+// Keep worker typing local so tsconfig does not need the webworker lib globally.
+const ctx = self as unknown as {
+  onmessage: ((ev: MessageEvent<RequestMessage>) => void) | null
+  postMessage: (message: ResponseMessage) => void
+}
 
 ctx.onmessage = (ev: MessageEvent<RequestMessage>) => {
   try {

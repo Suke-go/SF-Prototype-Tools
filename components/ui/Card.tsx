@@ -16,7 +16,7 @@ export function Card({ interactive = false, tone = 'student', className, childre
   return (
     <div
       className={cn(
-        'rounded-lg p-6',
+        'rounded-lg p-12',
         toneStyles,
         interactive && 'cursor-pointer transition-all duration-normal hover:-translate-y-1 hover:shadow-[0_4px_8px_rgba(0,0,0,0.4)]',
         className
@@ -30,7 +30,7 @@ export function Card({ interactive = false, tone = 'student', className, childre
 
 export function CardHeader({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('mb-4', className)} {...props}>
+    <div className={cn('mb-6', className)} {...props}>
       {children}
     </div>
   )
@@ -54,7 +54,7 @@ export function CardContent({ className, children, ...props }: React.HTMLAttribu
 
 export function CardFooter({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('mt-4 pt-4 border-t border-student-border-secondary', className)} {...props}>
+    <div className={cn('mt-6 pt-6 border-t border-student-border-secondary', className)} {...props}>
       {children}
     </div>
   )

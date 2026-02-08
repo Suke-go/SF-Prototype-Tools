@@ -1,14 +1,38 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getAuthContext, requireTeacher } from '@/lib/middleware/auth'
 
 export const dynamic = 'force-dynamic'
 
-// SSE: セッション進捗のリアルタイムストリーミング
 export async function GET(request: NextRequest) {
-  const sessionId = new URL(request.url).searchParams.get('sessionId')
+  let auth
+  try {
+    auth = requireTeacher(await getAuthContext(request))
+  } catch {
+    return NextResponse.json(
+      { success: false, error: { code: 'UNAUTHORIZED', message: 'ログインが必要です' } },
+      { status: 401 }
+    )
+  }
 
+  const sessionId = new URL(request.url).searchParams.get('sessionId')
   if (!sessionId) {
-    return new Response('sessionId is required', { status: 400 })
+    return NextResponse.json(
+      { success: false, error: { code: 'INVALID_REQUEST', message: 'sessionIdが必要です' } },
+      { status: 400 }
+    )
+  }
+  const targetSessionId = sessionId
+
+  const canAccess = await prisma.session.findFirst({
+    where: { id: targetSessionId, schoolId: auth.schoolId, teacherId: auth.teacherId },
+    select: { id: true },
+  })
+  if (!canAccess) {
+    return NextResponse.json(
+      { success: false, error: { code: 'FORBIDDEN', message: 'このセッションを参照する権限がありません' } },
+      { status: 403 }
+    )
   }
 
   const encoder = new TextEncoder()
@@ -16,10 +40,7 @@ export async function GET(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      // 初回送信
       await sendProgress(controller)
-
-      // 5秒ごとにポーリング
       const interval = setInterval(async () => {
         if (closed) {
           clearInterval(interval)
@@ -29,15 +50,22 @@ export async function GET(request: NextRequest) {
           await sendProgress(controller)
         } catch {
           clearInterval(interval)
-          controller.close()
+          try {
+            controller.close()
+          } catch {
+            // no-op
+          }
         }
       }, 5000)
 
-      // クライアント切断時
       request.signal.addEventListener('abort', () => {
         closed = true
         clearInterval(interval)
-        try { controller.close() } catch { /* already closed */ }
+        try {
+          controller.close()
+        } catch {
+          // already closed
+        }
       })
     },
   })
@@ -45,37 +73,57 @@ export async function GET(request: NextRequest) {
   async function sendProgress(controller: ReadableStreamDefaultController) {
     try {
       const session = await prisma.session.findUnique({
-        where: { id: sessionId! },
-        select: { id: true, status: true, themeId: true },
+        where: { id: targetSessionId },
+        select: {
+          id: true,
+          status: true,
+          themeId: true,
+          selectableThemes: {
+            select: { themeId: true },
+          },
+        },
       })
       if (!session) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'SESSION_NOT_FOUND' })}\n\n`))
         return
       }
 
-      const questionCount = await prisma.question.count({
-        where: { themeId: session.themeId },
-      })
+      const allowedThemeIds =
+        session.selectableThemes.length > 0 ? session.selectableThemes.map((entry) => entry.themeId) : [session.themeId]
 
-      const students = await prisma.student.findMany({
-        where: { sessionId: sessionId! },
-        select: {
-          id: true,
-          progressStatus: true,
-          _count: { select: { responses: true } },
-        },
-      })
+      const [questionCount, totalStudents, groupedStatuses, totalResponses] = await Promise.all([
+        prisma.question.count({
+          where: { themeId: { in: allowedThemeIds } },
+        }),
+        prisma.student.count({
+          where: { sessionId: targetSessionId },
+        }),
+        prisma.student.groupBy({
+          by: ['progressStatus'],
+          where: { sessionId: targetSessionId },
+          _count: { _all: true },
+        }),
+        prisma.studentResponse.count({
+          where: { sessionId: targetSessionId },
+        }),
+      ])
+
+      const statusCounts = groupedStatuses.reduce<Record<string, number>>((acc, row) => {
+        acc[row.progressStatus] = row._count._all
+        return acc
+      }, {})
 
       const stats = {
         sessionStatus: session.status,
-        total: students.length,
-        notStarted: students.filter((s) => s.progressStatus === 'NOT_STARTED').length,
-        bigFive: students.filter((s) => s.progressStatus === 'BIG_FIVE').length,
-        themeSelection: students.filter((s) => s.progressStatus === 'THEME_SELECTION').length,
-        questions: students.filter((s) => s.progressStatus === 'QUESTIONS').length,
-        completed: students.filter((s) => s.progressStatus === 'COMPLETED').length,
+        total: totalStudents,
+        notStarted: statusCounts.NOT_STARTED ?? 0,
+        bigFive: statusCounts.BIG_FIVE ?? 0,
+        themeSelection: statusCounts.THEME_SELECTION ?? 0,
+        briefing: statusCounts.BRIEFING ?? 0,
+        questions: statusCounts.QUESTIONS ?? 0,
+        completed: statusCounts.COMPLETED ?? 0,
         questionCount,
-        totalResponses: students.reduce((s, st) => s + st._count.responses, 0),
+        totalResponses,
         timestamp: new Date().toISOString(),
       }
 

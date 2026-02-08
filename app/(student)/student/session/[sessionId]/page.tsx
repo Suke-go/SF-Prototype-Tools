@@ -1,94 +1,139 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
-import { Button, LoadingSpinner } from '@/components/ui'
+import { useRouter } from 'next/navigation'
+import { Button, Input, LoadingSpinner } from '@/components/ui'
+import { fetchWithRetry } from '@/lib/fetch-with-retry'
 
-function getStudentId(sessionId: string): string | null {
-  if (typeof window === 'undefined') return null
-  return localStorage.getItem(`student:id:${sessionId}`)
-}
+type SessionGateState = 'checking' | 'joined' | 'needs_join'
 
-const STEPS = [
-  { num: '01', label: 'Big Five 性格診断', desc: '10問の直感的な質問' },
-  { num: '02', label: 'テーマ選択', desc: '興味のあるテーマを1つ選ぶ' },
-  { num: '03', label: '質問回答', desc: '未来社会についての20の問い' },
-  { num: '04', label: '意見マップ', desc: '集団の中での自分の位置を見る' },
-]
-
-export default function StudentSessionPage({
-  params,
-}: {
-  params: { sessionId: string }
-}) {
+export default function StudentSessionPage({ params }: { params: { sessionId: string } }) {
+  const router = useRouter()
   const sessionId = params.sessionId
-  const [ready, setReady] = useState(false)
+  const [gateState, setGateState] = useState<SessionGateState>('checking')
+  const [passcode, setPasscode] = useState('')
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [nextPath, setNextPath] = useState<string | null>(null)
 
   useEffect(() => {
-    const existing = getStudentId(sessionId)
-    if (existing) {
-      setReady(true)
-      return
-    }
-
     let cancelled = false
-    async function autoJoin() {
+
+    async function checkGate() {
       try {
-        setJoining(true)
-        const res = await fetch('/api/session/join', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId }),
+        const progressRes = await fetchWithRetry(`/api/session/progress?sessionId=${encodeURIComponent(sessionId)}`, {
+          cache: 'no-store',
         })
-        const ct = res.headers.get('content-type') || ''
-        if (!ct.includes('application/json')) throw new Error('サーバーエラー')
-        const json = await res.json()
-        if (!res.ok) throw new Error(json?.error?.message || 'セッション参加に失敗しました')
-        const newStudentId = json?.data?.studentId as string | undefined
-        if (!newStudentId) throw new Error('studentIdの発行に失敗しました')
-        if (!cancelled) {
-          localStorage.setItem(`student:id:${sessionId}`, newStudentId)
-          localStorage.setItem('student:lastSessionId', sessionId)
-          setReady(true)
+        if (cancelled) return
+
+        if (progressRes.ok) {
+          const progressJson = await progressRes.json()
+          const path = progressJson?.data?.nextPath as string | undefined
+          if (path) setNextPath(path)
+          if (path && !path.endsWith('/big-five')) {
+            router.push(path)
+            return
+          }
+          setGateState('joined')
+          return
         }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'セッション参加に失敗しました')
-      } finally {
-        if (!cancelled) setJoining(false)
+
+        if (progressRes.status === 401 || progressRes.status === 403) {
+          setGateState('needs_join')
+          return
+        }
+
+        setError('セッション状態の確認に失敗しました')
+        setGateState('needs_join')
+      } catch {
+        if (!cancelled) {
+          setError('セッション状態の確認に失敗しました')
+          setGateState('needs_join')
+        }
       }
     }
-    autoJoin()
-    return () => { cancelled = true }
-  }, [sessionId])
 
-  if (joining) {
+    void checkGate()
+
+    return () => {
+      cancelled = true
+    }
+  }, [router, sessionId])
+
+  async function joinFromSessionPage() {
+    if (!passcode.trim()) return
+    setError(null)
+    setJoining(true)
+    try {
+      const res = await fetchWithRetry('/api/session/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, passcode: passcode.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message || 'セッション参加に失敗しました')
+      const progressRes = await fetchWithRetry(`/api/session/progress?sessionId=${encodeURIComponent(sessionId)}`, {
+        cache: 'no-store',
+      })
+      if (progressRes.ok) {
+        const progressJson = await progressRes.json()
+        const path = progressJson?.data?.nextPath as string | undefined
+        if (path) {
+          router.push(path)
+          return
+        }
+      }
+      setGateState('joined')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'セッション参加に失敗しました')
+    } finally {
+      setJoining(false)
+    }
+  }
+
+  if (gateState === 'checking') {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <div className="text-center float-up">
-          <LoadingSpinner size="lg" />
-          <p className="mt-5 text-sm text-student-text-tertiary">セッションに接続中...</p>
-        </div>
+        <LoadingSpinner size="lg" />
       </main>
     )
   }
 
-  if (error) {
+  if (gateState === 'needs_join') {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center px-6">
-        <div className="w-full max-w-md text-center">
-          <p className="font-mono text-xs text-student-accent-red">ERROR</p>
-          <p className="mt-3 text-student-text-primary">{error}</p>
-          <div className="mt-6 flex justify-center gap-3">
-            <Button variant="secondary" onClick={() => window.location.reload()}>再試行</Button>
-            <Button variant="secondary" onClick={() => (window.location.href = '/student')}>ID入力に戻る</Button>
+      <main className="matte-texture relative flex min-h-screen flex-col items-center justify-center px-6">
+        <div className="w-full max-w-md">
+          <div className="text-center">
+            <p className="font-mono text-xs tracking-[0.2em] text-student-text-disabled">参加認証</p>
+            <h1 className="mt-3 font-heading text-3xl font-bold text-student-text-primary">参加コードを入力</h1>
+            <p className="mt-3 text-sm text-student-text-tertiary">このURLから参加するには参加コードが必要です。</p>
+          </div>
+
+          <div className="mt-8 space-y-3">
+            {error && (
+              <div className="rounded-lg border border-student-semantic-error/30 bg-student-semantic-error/10 px-6 py-4">
+                <p className="text-sm text-student-text-primary">{error}</p>
+              </div>
+            )}
+            <Input
+              type="password"
+              value={passcode}
+              onChange={(event) => setPasscode(event.target.value)}
+              placeholder="参加コード"
+              className="text-center font-mono"
+              onKeyDown={(event) => event.key === 'Enter' && joinFromSessionPage()}
+            />
+            <Button onClick={() => void joinFromSessionPage()} disabled={joining || !passcode.trim()} className="w-full">
+              {joining ? '参加中...' : 'このセッションに参加'}
+            </Button>
+            <Button variant="secondary" onClick={() => router.push('/student')} className="w-full">
+              参加画面に戻る
+            </Button>
           </div>
         </div>
       </main>
     )
   }
-
-  if (!ready) return null
 
   return (
     <main className="matte-texture relative flex min-h-screen flex-col items-center justify-center px-6">
@@ -98,40 +143,25 @@ export default function StudentSessionPage({
 
       <div className="relative z-10 w-full max-w-lg">
         <div className="float-up text-center">
-          <p className="font-mono text-xs tracking-[0.2em] text-student-text-disabled">SESSION JOINED</p>
-          <h1 className="mt-4 font-heading text-3xl font-bold text-student-text-primary">
-            これから始まること
-          </h1>
+          <p className="font-mono text-xs tracking-[0.2em] text-student-text-disabled">セッション説明</p>
+          <h1 className="mt-4 font-heading text-3xl font-bold text-student-text-primary">セッションへようこそ</h1>
           <p className="mt-3 text-sm text-student-text-tertiary">
-            4つのステップで、あなたの思考を可視化します
+            この体験では、対話活動のテーマを読みながら、あなたの考えを言語化していきます。
           </p>
         </div>
 
-        {/* ステップ一覧 */}
-        <div className="mt-10 space-y-0">
-          {STEPS.map((step, i) => (
-            <div
-              key={step.num}
-              className="fade-in flex items-start gap-5 border-l border-student-border-primary py-5 pl-6"
-              style={{ animationDelay: `${150 + i * 100}ms` }}
-            >
-              <span className="font-mono text-sm text-student-text-disabled">{step.num}</span>
-              <div>
-                <div className="text-base font-medium text-student-text-primary">{step.label}</div>
-                <div className="mt-0.5 text-sm text-student-text-tertiary">{step.desc}</div>
-              </div>
-            </div>
-          ))}
+        <div className="mt-8 rounded-xl border border-student-border-primary bg-student-bg-secondary p-6 text-sm leading-7 text-student-text-secondary fade-in">
+          <p>正解を当てる活動ではなく、近い考えに気づく活動です。</p>
+          <p className="mt-3">最初に Big Five 診断を行い、その後にテーマへ進みます。</p>
         </div>
 
-        <div className="mt-10 text-center fade-in" style={{ animationDelay: '600ms' }}>
+        <div className="mt-12 text-center fade-in" style={{ animationDelay: '600ms' }}>
           <Button
-            onClick={() => (window.location.href = `/student/session/${encodeURIComponent(sessionId)}/big-five`)}
-            className="rounded-xl px-10 py-4 text-base"
+            onClick={() => router.push(nextPath || `/student/session/${encodeURIComponent(sessionId)}/big-five`)}
+            className="rounded-xl px-12 py-6 text-base"
           >
-            はじめる
+            {nextPath && !nextPath.endsWith('/big-five') ? '続きから再開' : 'Big Five 診断へ'}
           </Button>
-          <p className="mt-4 text-xs text-student-text-disabled">所要時間：約10〜15分</p>
         </div>
       </div>
     </main>

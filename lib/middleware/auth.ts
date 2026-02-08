@@ -1,43 +1,61 @@
 import { NextRequest } from 'next/server'
-import { verifyAccessToken, JWTPayload } from '@/lib/auth/jwt'
-import { cookies } from 'next/headers'
+import { verifyAccessToken } from '@/lib/auth/jwt'
 
 export interface AuthContext {
-  sessionId: string
-  role: 'admin' | 'student'
+  role: 'teacher' | 'student'
+  schoolId: string
+  teacherId?: string
+  sessionId?: string
   studentId?: string
 }
 
 export async function getAuthContext(request: NextRequest): Promise<AuthContext | null> {
   try {
-    const cookieStore = await cookies()
+    const teacherToken = request.cookies.get('teacherToken')?.value
+    const studentToken = request.cookies.get('studentToken')?.value
+    const token = teacherToken || studentToken
 
-    // NOTE: admin と student で Cookie を分ける（同一ブラウザでの衝突回避）
-    const accessToken = cookieStore.get('accessToken')?.value || cookieStore.get('studentToken')?.value
+    if (!token) return null
 
-    if (!accessToken) {
-      return null
+    const payload = verifyAccessToken(token)
+    if (payload.role === 'teacher' && payload.teacherId) {
+      return {
+        role: 'teacher',
+        schoolId: payload.schoolId,
+        teacherId: payload.teacherId,
+      }
     }
 
-    const payload = verifyAccessToken(accessToken)
-    return {
-      sessionId: payload.sessionId,
-      role: payload.role,
-      studentId: payload.studentId,
+    if (payload.role === 'student' && payload.studentId && payload.sessionId) {
+      return {
+        role: 'student',
+        schoolId: payload.schoolId,
+        sessionId: payload.sessionId,
+        studentId: payload.studentId,
+      }
     }
-  } catch (error) {
+
+    return null
+  } catch {
     return null
   }
 }
 
-export function requireAuth(authContext: AuthContext | null, requiredRole?: 'admin' | 'student'): AuthContext {
-  if (!authContext) {
+export function requireAuth(authContext: AuthContext | null): AuthContext {
+  if (!authContext) throw new Error('UNAUTHORIZED')
+  return authContext
+}
+
+export function requireTeacher(authContext: AuthContext | null): AuthContext {
+  if (!authContext || authContext.role !== 'teacher' || !authContext.teacherId) {
     throw new Error('UNAUTHORIZED')
   }
+  return authContext
+}
 
-  if (requiredRole && authContext.role !== requiredRole) {
-    throw new Error('FORBIDDEN')
+export function requireStudent(authContext: AuthContext | null): AuthContext {
+  if (!authContext || authContext.role !== 'student' || !authContext.studentId || !authContext.sessionId) {
+    throw new Error('UNAUTHORIZED')
   }
-
   return authContext
 }

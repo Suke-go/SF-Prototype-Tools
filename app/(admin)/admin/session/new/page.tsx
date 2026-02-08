@@ -1,7 +1,9 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingSpinner } from '@/components/ui'
+import { fetchWithRetry } from '@/lib/fetch-with-retry'
 
 type Theme = {
   id: string
@@ -9,22 +11,32 @@ type Theme = {
   description: string | null
 }
 
+const SESSION_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function generateSessionCode() {
+  return Array.from({ length: 6 }, () => SESSION_CODE_CHARS[Math.floor(Math.random() * SESSION_CODE_CHARS.length)]).join('')
+}
+
 export default function AdminNewSessionPage() {
+  const router = useRouter()
   const [themes, setThemes] = useState<Theme[]>([])
+  const [selectedThemeIds, setSelectedThemeIds] = useState<string[]>([])
   const [loadingThemes, setLoadingThemes] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [themeId, setThemeId] = useState('')
-  const [maxParticipants, setMaxParticipants] = useState(50)
+  const [sessionCode, setSessionCode] = useState(() => generateSessionCode())
+  const [maxParticipantsText, setMaxParticipantsText] = useState('50')
   const [passcode, setPasscode] = useState('')
 
-  async function safeParseJson(res: Response): Promise<any> {
-    const contentType = res.headers.get('content-type') || ''
-    if (contentType.includes('application/json')) return res.json()
-    const text = await res.text()
-    return { __nonJson: true, text: text.slice(0, 300) }
+  function normalizeSessionCode(raw: string) {
+    return raw.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32).toUpperCase()
+  }
+
+  function toggleTheme(themeId: string) {
+    setSelectedThemeIds((prev) => (prev.includes(themeId) ? prev.filter((id) => id !== themeId) : [...prev, themeId]))
   }
 
   useEffect(() => {
@@ -32,64 +44,70 @@ export default function AdminNewSessionPage() {
     async function load() {
       try {
         setLoadingThemes(true)
-        const res = await fetch('/api/themes', { cache: 'no-store' })
-        const json = await safeParseJson(res)
+        setError(null)
+        const res = await fetchWithRetry('/api/themes?status=ACTIVE', { cache: 'no-store' })
+        const json = await res.json()
         if (!res.ok) {
-          if (json?.__nonJson) {
-            throw new Error(
-              'テーマ取得に失敗しました。DB未設定（DATABASE_URL未設定）やサーバーエラーの可能性があります。'
-            )
-          }
-          throw new Error(json?.error?.message || 'テーマの取得に失敗しました')
+          throw new Error(json?.error?.message || 'テーマの読み込みに失敗しました')
         }
-        const list: Theme[] = json.data.themes
+        const list: Theme[] = json.data?.themes || []
         if (!cancelled) {
           setThemes(list)
-          if (!themeId && list.length > 0) setThemeId(list[0].id)
+          setSelectedThemeIds((current) => (current.length > 0 ? current : list.length > 0 ? [list[0].id] : []))
         }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'テーマの取得に失敗しました')
+        if (!cancelled) setError(e instanceof Error ? e.message : 'テーマの読み込みに失敗しました')
       } finally {
         if (!cancelled) setLoadingThemes(false)
       }
     }
-    load()
+
+    void load()
     return () => {
       cancelled = true
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const canSubmit = useMemo(() => {
-    return themeId && passcode.trim().length >= 8 && !submitting
-  }, [themeId, passcode, submitting])
+    const codeOk = /^[A-Za-z0-9_-]{4,32}$/.test(sessionCode.trim())
+    const maxParticipants = Number(maxParticipantsText)
+    const maxOk = Number.isInteger(maxParticipants) && maxParticipants >= 1 && maxParticipants <= 200
+    return selectedThemeIds.length > 0 && codeOk && maxOk && passcode.trim().length >= 4 && !submitting
+  }, [selectedThemeIds, sessionCode, maxParticipantsText, passcode, submitting])
 
   async function onSubmit() {
     try {
       setSubmitting(true)
       setError(null)
-      const res = await fetch('/api/session', {
+
+      const maxParticipants = Number.parseInt(maxParticipantsText, 10)
+      const res = await fetchWithRetry('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          description: description || undefined,
-          themeId,
+          title: title.trim() || undefined,
+          description: description.trim() || undefined,
+          sessionCode: sessionCode.trim(),
+          themeIds: selectedThemeIds,
           maxParticipants,
           passcode,
         }),
       })
-      const json = await safeParseJson(res)
+
+      const json = await res.json()
       if (!res.ok) {
-        if (json?.__nonJson) {
-          throw new Error(
-            'セッション作成に失敗しました。DB未設定（DATABASE_URL未設定）やサーバーエラーの可能性があります。'
-          )
-        }
-        throw new Error(json?.error?.message || 'セッション作成に失敗しました')
+        const issueMessages = Array.isArray(json?.error?.details?.issues)
+          ? json.error.details.issues
+              .map((issue: { message?: string }) => issue?.message)
+              .filter(Boolean)
+              .join(' / ')
+          : ''
+        throw new Error(issueMessages || json?.error?.message || 'セッション作成に失敗しました')
       }
 
       const created = json.data.session as { id: string }
       localStorage.setItem('admin:lastSessionId', created.id)
-      window.location.href = `/admin/dashboard?sessionId=${created.id}`
+      router.push(`/admin/board?sessionId=${created.id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'セッション作成に失敗しました')
     } finally {
@@ -98,96 +116,149 @@ export default function AdminNewSessionPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-4xl p-8">
       <Card tone="admin">
         <CardHeader>
           <CardTitle className="text-admin-text-primary">セッション作成</CardTitle>
         </CardHeader>
         <CardContent className="text-admin-text-secondary">
-          <div className="space-y-4">
+          <div className="space-y-5">
             {error && (
-              <div className="rounded-md border border-admin-border-primary bg-admin-bg-secondary p-3 text-admin-text-primary">
+              <div className="rounded-md border border-admin-semantic-error/30 bg-red-50 p-3 text-admin-semantic-error">
                 <p className="text-sm">{error}</p>
               </div>
             )}
 
-            <div className="rounded-md border border-admin-border-primary bg-admin-bg-secondary p-3">
-              <p className="text-sm text-admin-text-secondary">
-                セッション名は省略します（テーマ名 + 作成日時で自動生成）。
-              </p>
+            <div className="rounded-md border border-admin-border-primary bg-admin-bg-secondary p-3 text-sm">
+              セッションタイトル・参加コード・利用テーマを設定して開始します。
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-admin-text-secondary">説明（任意）</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                className="w-full rounded-md border border-admin-border-primary bg-admin-bg-primary px-4 py-3 text-admin-text-primary focus:outline-none focus:ring-2 focus:ring-admin-accent-primary focus:ring-offset-2 focus:ring-offset-admin-bg-primary"
-                placeholder="授業の狙い、注意事項など"
-              />
-            </div>
+            <form
+              className="space-y-5"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void onSubmit()
+              }}
+            >
+              <div className="space-y-2">
+                <Input
+                  label="タイトル（任意）"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="例: 3年A組 ムーンショット 第1回"
+                  className="border-admin-border-primary bg-admin-bg-primary text-admin-text-primary"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-admin-text-secondary">テーマ</label>
-              {loadingThemes ? (
-                <div className="flex items-center gap-2 text-sm">
-                  <LoadingSpinner size="sm" className="border-admin-accent-primary border-r-transparent" />
-                  <span>テーマを取得中...</span>
+              <div className="space-y-2">
+                <Input
+                  label="セッションコード"
+                  value={sessionCode}
+                  onChange={(e) => setSessionCode(normalizeSessionCode(e.target.value))}
+                  placeholder="例: MOONSHOT-2026-A"
+                  className="border-admin-border-primary bg-admin-bg-primary font-mono text-admin-text-primary"
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-admin-text-tertiary">4〜32文字、英数字と `-` ` _` が使えます</p>
+                  <button
+                    type="button"
+                    className="text-xs text-admin-accent-primary underline-offset-2 hover:underline"
+                    onClick={() => setSessionCode(generateSessionCode())}
+                  >
+                    ランダム再生成
+                  </button>
                 </div>
-              ) : (
-                <select
-                  value={themeId}
-                  onChange={(e) => setThemeId(e.target.value)}
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-admin-text-secondary">説明（任意）</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
                   className="w-full rounded-md border border-admin-border-primary bg-admin-bg-primary px-4 py-3 text-admin-text-primary focus:outline-none focus:ring-2 focus:ring-admin-accent-primary focus:ring-offset-2 focus:ring-offset-admin-bg-primary"
+                  placeholder="授業の狙い、進め方など"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-admin-text-secondary">このセッションで使うテーマ（複数選択可）</label>
+                {loadingThemes ? (
+                  <div className="flex items-center gap-2 text-sm">
+                    <LoadingSpinner size="sm" className="border-admin-accent-primary border-r-transparent" />
+                    <span>テーマを読み込み中...</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {themes.map((theme) => {
+                      const selected = selectedThemeIds.includes(theme.id)
+                      return (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          onClick={() => toggleTheme(theme.id)}
+                          className={[
+                            'rounded-lg border p-3 text-left transition-colors',
+                            selected
+                              ? 'border-admin-accent-primary bg-blue-50'
+                              : 'border-admin-border-primary bg-admin-bg-primary hover:bg-admin-bg-secondary',
+                          ].join(' ')}
+                        >
+                          <div className="flex items-start gap-3">
+                            <input type="checkbox" checked={selected} readOnly className="mt-1 h-4 w-4 accent-blue-600" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-admin-text-primary">{theme.title}</p>
+                              {theme.description && <p className="mt-1 text-xs text-admin-text-tertiary">{theme.description}</p>}
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {!loadingThemes && themes.length === 0 && (
+                  <p className="text-sm text-admin-semantic-error">利用可能なテーマがありません。先にテーマを作成してください。</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Input
+                    label="最大参加人数"
+                    type="number"
+                    value={maxParticipantsText}
+                    onChange={(e) => setMaxParticipantsText(e.target.value)}
+                    min={1}
+                    max={200}
+                    className="border-admin-border-primary bg-admin-bg-primary text-admin-text-primary"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Input
+                    label="参加コード"
+                    type="password"
+                    value={passcode}
+                    onChange={(e) => setPasscode(e.target.value)}
+                    placeholder="4桁以上の数字（例: 2468）"
+                    className="border-admin-border-primary bg-admin-bg-primary text-admin-text-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-1">
+                <Button
+                  tone="admin"
+                  type="submit"
+                  disabled={!canSubmit}
+                  className="bg-admin-accent-primary text-white hover:brightness-110 focus:ring-admin-accent-primary focus:ring-offset-admin-bg-primary"
                 >
-                  {themes.length === 0 && <option value="">（テーマがありません）</option>}
-                  {themes.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.title}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-admin-text-secondary">最大参加者数</label>
-                <Input
-                  type="number"
-                  value={maxParticipants}
-                  onChange={(e) => setMaxParticipants(Number(e.target.value))}
-                  min={1}
-                  max={200}
-                  className="bg-admin-bg-primary text-admin-text-primary border-admin-border-primary focus:ring-admin-accent-primary focus:ring-offset-admin-bg-primary"
-                />
+                  {submitting ? '作成中...' : '作成して管理ボードへ移動'}
+                </Button>
               </div>
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-admin-text-secondary">管理者パスコード</label>
-                <Input
-                  type="password"
-                  value={passcode}
-                  onChange={(e) => setPasscode(e.target.value)}
-                  placeholder="8文字以上"
-                  className="bg-admin-bg-primary text-admin-text-primary border-admin-border-primary focus:ring-admin-accent-primary focus:ring-offset-admin-bg-primary"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <Button
-                onClick={onSubmit}
-                disabled={!canSubmit}
-                className="bg-admin-accent-primary text-white hover:brightness-110 focus:ring-admin-accent-primary focus:ring-offset-admin-bg-primary"
-              >
-                {submitting ? '作成中...' : '作成してダッシュボードへ'}
-              </Button>
-            </div>
+            </form>
           </div>
         </CardContent>
       </Card>
     </main>
   )
 }
-

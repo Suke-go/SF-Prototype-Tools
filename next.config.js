@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const isProd = process.env.NODE_ENV === 'production'
+
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
@@ -23,25 +25,54 @@ const nextConfig = {
     return config
   },
 
-  // 画像最適化
+  // 画像最適化（リモート画像は使用しないため remotePatterns は空）
   images: {
     formats: ['image/webp', 'image/avif'],
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
-    ],
+    remotePatterns: [],
   },
 
-  // ヘッダー（キャッシュ制御）
+  // ヘッダー（セキュリティ + キャッシュ制御）
   async headers() {
+    /** @type {import('next/dist/lib/load-custom-routes').Header['headers']} */
+    const securityHeaders = [
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+      ...(isProd
+        ? [
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
+              "img-src 'self' data:",
+              "connect-src 'self'",
+            ].join('; '),
+          },
+        ]
+        : []),
+    ]
+
     return [
+      {
+        // 全ページ共通セキュリティヘッダー
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
       {
         // 静的アセットのキャッシュ
         source: '/_next/static/:path*',
         headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          {
+            key: 'Cache-Control',
+            value: isProd
+              ? 'public, max-age=31536000, immutable'
+              : 'no-store, no-cache, must-revalidate',
+          },
         ],
       },
       {

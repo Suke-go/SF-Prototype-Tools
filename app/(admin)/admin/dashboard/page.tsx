@@ -1,7 +1,11 @@
-'use client'
+﻿'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Accordion, Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingSpinner } from '@/components/ui'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Button, Card, CardContent, CardHeader, CardTitle, LoadingSpinner } from '@/components/ui'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { SessionShareCard } from '@/components/common/SessionShareCard'
+import { fetchWithRetry } from '@/lib/fetch-with-retry'
 
 type BigFive = {
   extraversion: number
@@ -26,26 +30,18 @@ type Stats = {
   notStarted: number
   bigFive: number
   themeSelection: number
+  briefing?: number
   questions: number
   completed: number
   questionCount: number
-}
-
-type SSEData = {
-  sessionStatus: string
-  total: number
-  notStarted: number
-  bigFive: number
-  themeSelection: number
-  questions: number
-  completed: number
-  questionCount: number
-  totalResponses: number
-  timestamp: string
+  totalResponses?: number
+  timestamp?: string
+  sessionStatus?: 'PREPARING' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED'
 }
 
 type Session = {
   id: string
+  sessionCode: string | null
   title: string
   description: string | null
   themeId: string
@@ -54,18 +50,29 @@ type Session = {
   currentParticipants: number
 }
 
+type SessionSummary = {
+  id: string
+  sessionCode: string | null
+  title: string
+  status: 'PREPARING' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED'
+  participantCount: number
+  createdAt: string
+}
+
 const PROGRESS_LABELS: Record<string, string> = {
   NOT_STARTED: '未開始',
   BIG_FIVE: 'Big Five',
   THEME_SELECTION: 'テーマ選択',
-  MAIN_PAGE: 'メインページ',
-  GROUP_ACTIVITY: 'グループ活動',
-  QUESTIONS: '質問回答中',
+  BRIEFING: '読み物',
+  QUESTIONS: '設問回答',
   COMPLETED: '完了',
 }
 
 export default function AdminDashboardPage() {
-  const [sessionId, setSessionId] = useState('')
+  const router = useRouter()
+  const [ready, setReady] = useState(false)
+  const [selectedSessionId, setSelectedSessionId] = useState('')
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [session, setSession] = useState<Session | null>(null)
   const [students, setStudents] = useState<StudentRow[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
@@ -73,189 +80,274 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [sseData, setSseData] = useState<SSEData | null>(null)
-  const [sortKey, setSortKey] = useState<'joinedAt' | 'progressStatus' | 'responseCount'>('joinedAt')
-  const [sortAsc, setSortAsc] = useState(false)
   const [filterStatus, setFilterStatus] = useState<string>('ALL')
+  const [confirmAction, setConfirmAction] = useState<'complete' | 'archive' | null>(null)
+  const [exportPreviewFormat, setExportPreviewFormat] = useState<'csv' | 'json' | null>(null)
+  const [resetTarget, setResetTarget] = useState<StudentRow | null>(null)
+  const [liveStats, setLiveStats] = useState<Stats | null>(null)
+  const [liveConnected, setLiveConnected] = useState(false)
 
-  const sseRef = useRef<EventSource | null>(null)
-
-  useEffect(() => {
-    const url = new URL(window.location.href)
-    const id = url.searchParams.get('sessionId') || localStorage.getItem('admin:lastSessionId') || ''
-    setSessionId(id)
-    if (id) {
-      fetchSession(id)
-      fetchStudents(id)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // SSE接続
-  useEffect(() => {
-    if (!sessionId || !session) return
-    const es = new EventSource(`/api/events/session/progress?sessionId=${encodeURIComponent(sessionId)}`)
-    sseRef.current = es
-    es.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data) as SSEData
-        setSseData(data)
-      } catch { /* ignore */ }
-    }
-    es.onerror = () => {
-      // 自動再接続はEventSourceが処理
-    }
-    return () => {
-      es.close()
-      sseRef.current = null
-    }
-  }, [sessionId, session])
-
-  // SSEデータ更新時に学生リストをリフレッシュ（15秒ごと）
-  const lastRefresh = useRef(0)
-  useEffect(() => {
-    if (!sseData || !sessionId) return
-    const now = Date.now()
-    if (now - lastRefresh.current > 15000) {
-      lastRefresh.current = now
-      fetchStudents(sessionId)
-    }
-  }, [sseData, sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function fetchSession(id: string) {
+  const loadSessionBundle = useCallback(async (sessionId: string) => {
+    if (!sessionId) return
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(`/api/session?sessionId=${encodeURIComponent(id)}`, { cache: 'no-store' })
-      const ct = res.headers.get('content-type') || ''
-      if (!ct.includes('application/json')) throw new Error('サーバーエラー（DB未設定の可能性）')
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error?.message || 'セッション取得に失敗しました')
-      setSession(json.data.session)
-      localStorage.setItem('admin:lastSessionId', id)
-    } catch (e) {
+
+      const [sessionRes, studentsRes] = await Promise.all([
+        fetchWithRetry(`/api/session?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' }),
+        fetchWithRetry(`/api/session/students?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' }),
+      ])
+
+      const [sessionJson, studentsJson] = await Promise.all([sessionRes.json(), studentsRes.json()])
+
+      if (!sessionRes.ok) throw new Error(sessionJson?.error?.message || 'セッション取得に失敗しました')
+      if (!studentsRes.ok) throw new Error(studentsJson?.error?.message || '参加者取得に失敗しました')
+
+      setSession(sessionJson.data.session)
+      setStudents(studentsJson.data.students)
+      setStats(studentsJson.data.stats)
+      setLiveStats(null)
+      setBigFiveAvg(studentsJson.data.bigFiveAvg)
+      localStorage.setItem('admin:lastSessionId', sessionId)
+    } catch (err) {
       setSession(null)
-      setError(e instanceof Error ? e.message : 'セッション取得に失敗しました')
+      setStudents([])
+      setStats(null)
+      setLiveStats(null)
+      setBigFiveAvg(null)
+      setError(err instanceof Error ? err.message : 'データ取得に失敗しました')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  async function fetchStudents(id: string) {
-    try {
-      const res = await fetch(`/api/session/students?sessionId=${encodeURIComponent(id)}`, { cache: 'no-store' })
-      const ct = res.headers.get('content-type') || ''
-      if (!ct.includes('application/json')) return
-      const json = await res.json()
-      if (res.ok) {
-        setStudents(json.data.students)
-        setStats(json.data.stats)
-        setBigFiveAvg(json.data.bigFiveAvg)
+  useEffect(() => {
+    let cancelled = false
+
+    async function bootstrap() {
+      try {
+        const auth = await fetch('/api/auth/teacher/me', { cache: 'no-store' })
+        if (!auth.ok) {
+          router.push('/admin')
+          return
+        }
+
+        const listRes = await fetchWithRetry('/api/session', { cache: 'no-store' })
+        const listJson = await listRes.json()
+        if (!listRes.ok) throw new Error(listJson?.error?.message || 'セッション一覧の取得に失敗しました')
+
+        const items: SessionSummary[] = listJson?.data?.sessions || []
+        if (cancelled) return
+
+        setSessions(items)
+        const url = new URL(window.location.href)
+        const initialId = url.searchParams.get('sessionId') || localStorage.getItem('admin:lastSessionId') || items[0]?.id || ''
+        setSelectedSessionId(initialId)
+        setReady(true)
+
+        if (initialId) {
+          await loadSessionBundle(initialId)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : '初期化に失敗しました')
+          setReady(true)
+        }
       }
-    } catch { /* silent */ }
-  }
+    }
+
+    void bootstrap()
+    return () => {
+      cancelled = true
+    }
+  }, [loadSessionBundle, router])
+
+  useEffect(() => {
+    if (!selectedSessionId || typeof window === 'undefined') {
+      setLiveConnected(false)
+      setLiveStats(null)
+      return
+    }
+
+    let source: EventSource | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let disposed = false
+
+    const clearReconnect = () => {
+      if (!reconnectTimer) return
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+
+    const closeSource = () => {
+      if (!source) return
+      source.close()
+      source = null
+      setLiveConnected(false)
+    }
+
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimer || document.visibilityState === 'hidden') return
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        connect()
+      }, 3000)
+    }
+
+    const connect = () => {
+      if (disposed || document.visibilityState === 'hidden') return
+      closeSource()
+      source = new EventSource(`/api/events/session/progress?sessionId=${encodeURIComponent(selectedSessionId)}`)
+      source.onopen = () => {
+        clearReconnect()
+        setLiveConnected(true)
+      }
+      source.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as Stats
+          setLiveStats(payload)
+          if (payload.sessionStatus) {
+            setSession((prev) => (prev ? { ...prev, status: payload.sessionStatus! } : prev))
+          }
+        } catch {
+          // ignore invalid payload
+        }
+      }
+      source.onerror = () => {
+        closeSource()
+        scheduleReconnect()
+      }
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        closeSource()
+        clearReconnect()
+        return
+      }
+      connect()
+    }
+
+    const handleOnline = () => connect()
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('online', handleOnline)
+    connect()
+
+    return () => {
+      disposed = true
+      clearReconnect()
+      closeSource()
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [selectedSessionId])
 
   async function updateStatus(nextStatus: Session['status']) {
-    if (!sessionId) return
+    if (!selectedSessionId) return
     try {
       setUpdating(true)
-      setError(null)
-      const res = await fetch(`/api/session?sessionId=${encodeURIComponent(sessionId)}`, {
+      const res = await fetchWithRetry(`/api/session?sessionId=${encodeURIComponent(selectedSessionId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus }),
       })
-      const ct = res.headers.get('content-type') || ''
-      if (!ct.includes('application/json')) throw new Error('サーバーエラー')
       const json = await res.json()
-      if (!res.ok) throw new Error(json?.error?.message || '更新に失敗しました')
-      await fetchSession(sessionId)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '更新に失敗しました')
+      if (!res.ok) throw new Error(json?.error?.message || 'ステータス更新に失敗しました')
+      await loadSessionBundle(selectedSessionId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ステータス更新に失敗しました')
     } finally {
       setUpdating(false)
+      setConfirmAction(null)
     }
   }
+
+  const handleExport = useCallback(() => {
+    if (!selectedSessionId || !exportPreviewFormat) return
+    window.open(`/api/session/export?sessionId=${encodeURIComponent(selectedSessionId)}&format=${exportPreviewFormat}`, '_blank')
+    setExportPreviewFormat(null)
+  }, [exportPreviewFormat, selectedSessionId])
+
+  const handleResetBigFive = useCallback(
+    async () => {
+      if (!selectedSessionId || !resetTarget) return
+      try {
+        const res = await fetchWithRetry('/api/session/students/reset-big-five', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: selectedSessionId, studentId: resetTarget.id }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json?.error?.message || 'Big Fiveリセットに失敗しました')
+        await loadSessionBundle(selectedSessionId)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Big Fiveリセットに失敗しました')
+      } finally {
+        setResetTarget(null)
+      }
+    },
+    [loadSessionBundle, resetTarget, selectedSessionId]
+  )
 
   const shareUrl = useMemo(() => {
-    if (!sessionId || typeof window === 'undefined') return ''
-    return `${window.location.origin}/student/session/${sessionId}`
-  }, [sessionId])
+    if (!selectedSessionId || typeof window === 'undefined') return ''
+    return `${window.location.origin}/student/session/${selectedSessionId}`
+  }, [selectedSessionId])
 
-  // ソート＋フィルター
   const filteredStudents = useMemo(() => {
-    let list = [...students]
-    if (filterStatus !== 'ALL') {
-      list = list.filter((s) => s.progressStatus === filterStatus)
-    }
-    list.sort((a, b) => {
-      let cmp = 0
-      if (sortKey === 'joinedAt') cmp = new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime()
-      else if (sortKey === 'progressStatus') cmp = a.progressStatus.localeCompare(b.progressStatus)
-      else if (sortKey === 'responseCount') cmp = a.responseCount - b.responseCount
-      return sortAsc ? cmp : -cmp
-    })
-    return list
-  }, [students, filterStatus, sortKey, sortAsc])
+    if (filterStatus === 'ALL') return students
+    return students.filter((student) => student.progressStatus === filterStatus)
+  }, [students, filterStatus])
 
-  function handleSort(key: typeof sortKey) {
-    if (sortKey === key) setSortAsc(!sortAsc)
-    else { setSortKey(key); setSortAsc(true) }
+  const displayStats = liveStats ?? stats
+
+  if (!ready) {
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <LoadingSpinner size="lg" className="border-admin-accent-primary border-r-transparent" />
+      </main>
+    )
   }
-
-  function handleLoad() {
-    if (!sessionId) return
-    fetchSession(sessionId)
-    fetchStudents(sessionId)
-  }
-
-  const handleExport = useCallback((format: 'json' | 'csv') => {
-    if (!sessionId) return
-    window.open(`/api/session/export?sessionId=${encodeURIComponent(sessionId)}&format=${format}`, '_blank')
-  }, [sessionId])
-
-  // 回答分布の計算
-  const liveStats = sseData || (stats ? {
-    total: stats.total,
-    notStarted: stats.notStarted,
-    bigFive: stats.bigFive,
-    themeSelection: stats.themeSelection,
-    questions: stats.questions,
-    completed: stats.completed,
-    questionCount: stats.questionCount,
-    totalResponses: students.reduce((s, st) => s + st.responseCount, 0),
-    sessionStatus: session?.status || 'PREPARING',
-    timestamp: new Date().toISOString(),
-  } : null)
 
   return (
     <main className="mx-auto max-w-7xl p-4 md:p-8">
-      {/* ヘッダー */}
       <div className="mb-6 flex flex-wrap items-end gap-4">
         <div className="flex-1">
-          <h1 className="font-body text-2xl font-bold text-admin-text-primary">管理者ダッシュボード</h1>
-          {sseData && (
-            <p className="mt-1 text-xs text-admin-text-tertiary">
-              リアルタイム更新中 · 最終: {new Date(sseData.timestamp).toLocaleTimeString('ja-JP')}
+          <h1 className="font-body text-2xl font-bold text-admin-text-primary">教員ダッシュボード</h1>
+          <p className="mt-1 text-sm text-admin-text-tertiary">セッション進行と参加者状況を管理します。</p>
+          {selectedSessionId && (
+            <p className="mt-2 text-xs text-admin-text-tertiary">
+              ライブ更新: <span className={liveConnected ? 'text-green-700' : 'text-amber-700'}>{liveConnected ? '接続中' : '再接続中'}</span>
             </p>
           )}
         </div>
         <div className="flex items-end gap-2">
-          <div className="w-72">
-            <Input
-              value={sessionId}
-              onChange={(e) => setSessionId(e.target.value)}
-              placeholder="セッションID (UUID)"
-              className="bg-admin-bg-primary text-admin-text-primary border-admin-border-primary text-sm"
-            />
-          </div>
-          <Button
-            onClick={handleLoad}
-            disabled={!sessionId || loading}
-            className="bg-admin-accent-primary text-white hover:brightness-110 text-sm"
-          >
-            {loading ? '取得中...' : '取得'}
+          <Button tone="admin" variant="secondary" onClick={() => router.push('/admin/session/new')}>
+            新規作成
           </Button>
+          <Button tone="admin" variant="secondary" onClick={() => router.push('/admin/board')}>
+            一覧へ
+          </Button>
+          <div className="w-80">
+            <label className="mb-1 block text-xs text-admin-text-tertiary">セッション</label>
+            <select
+              value={selectedSessionId}
+              onChange={(event) => {
+                const nextId = event.target.value
+                setSelectedSessionId(nextId)
+                if (nextId) void loadSessionBundle(nextId)
+              }}
+              className="w-full rounded-md border border-admin-border-primary bg-admin-bg-primary px-3 py-2 text-sm text-admin-text-primary"
+            >
+              {!selectedSessionId && <option value="">選択してください</option>}
+              {sessions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title} {item.sessionCode ? `(${item.sessionCode})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -265,136 +357,93 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <LoadingSpinner size="lg" className="border-admin-accent-primary border-r-transparent" />
-        </div>
-      )}
-
       {session && (
         <div className="space-y-6">
-          {/* セッション情報バー */}
           <Card tone="admin" className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <div className="text-lg font-semibold text-admin-text-primary">{session.title}</div>
                 <div className="text-sm text-admin-text-tertiary">
                   状態: <span className="font-medium text-admin-text-primary">{session.status}</span>
-                  {' · '}参加者: <span className="font-medium text-admin-text-primary">{liveStats?.total ?? session.currentParticipants} / {session.maxParticipants}</span>
+                  {' / '}参加者:{' '}
+                  <span className="font-medium text-admin-text-primary">
+                    {displayStats?.total ?? session.currentParticipants} / {session.maxParticipants}
+                  </span>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button
-                  disabled={updating || session.status === 'ACTIVE'}
-                  onClick={() => updateStatus('ACTIVE')}
-                  className="bg-admin-accent-primary text-white hover:brightness-110 text-sm"
-                >
-                  進行開始
+                <Button tone="admin" disabled={updating || session.status === 'ACTIVE'} onClick={() => void updateStatus('ACTIVE')}>
+                  開始
                 </Button>
-                <Button
-                  disabled={updating || session.status === 'COMPLETED'}
-                  onClick={() => updateStatus('COMPLETED')}
-                  className="bg-admin-accent-secondary text-white hover:brightness-110 text-sm"
-                >
+                <Button tone="admin" disabled={updating || session.status === 'COMPLETED'} onClick={() => setConfirmAction('complete')}>
                   完了
                 </Button>
-                <Button
-                  variant="secondary"
-                  disabled={updating}
-                  onClick={() => updateStatus('ARCHIVED')}
-                  className="border-admin-border-primary text-admin-text-primary hover:bg-admin-bg-secondary text-sm"
-                >
+                <Button tone="admin" variant="secondary" disabled={updating} onClick={() => setConfirmAction('archive')}>
                   アーカイブ
                 </Button>
               </div>
             </div>
-            <div className="mt-3 text-xs text-admin-text-tertiary">
-              共有URL: <span className="font-mono text-admin-text-secondary break-all">{shareUrl}</span>
-            </div>
+            <div className="mt-3 text-xs text-admin-text-tertiary">SessionCode: {session.sessionCode || '-'}</div>
           </Card>
 
-          {/* 3カラムレイアウト */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px_240px]">
-            {/* 左: 学生一覧 */}
+          <SessionShareCard sessionCode={session.sessionCode} sessionUrl={shareUrl} />
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px_260px]">
             <Card tone="admin" className="overflow-hidden p-0">
               <div className="border-b border-admin-border-primary px-4 py-3">
                 <div className="flex items-center justify-between">
-                  <h2 className="font-medium text-admin-text-primary">学生一覧</h2>
+                  <h2 className="font-medium text-admin-text-primary">参加者一覧</h2>
                   <select
                     value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
+                    onChange={(event) => setFilterStatus(event.target.value)}
                     className="rounded border border-admin-border-primary bg-admin-bg-primary px-2 py-1 text-xs text-admin-text-primary"
                   >
                     <option value="ALL">すべて</option>
-                    <option value="NOT_STARTED">未開始</option>
-                    <option value="BIG_FIVE">Big Five</option>
-                    <option value="THEME_SELECTION">テーマ選択</option>
-                    <option value="QUESTIONS">質問回答中</option>
-                    <option value="COMPLETED">完了</option>
+                    {Object.keys(PROGRESS_LABELS).map((status) => (
+                      <option key={status} value={status}>
+                        {PROGRESS_LABELS[status]}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
-              <div className="max-h-[500px] overflow-auto">
+              <div className="max-h-[560px] overflow-auto">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-admin-bg-secondary text-admin-text-tertiary">
                     <tr>
-                      <th className="px-4 py-2 text-left font-medium">学生</th>
-                      <th
-                        className="cursor-pointer px-3 py-2 text-left font-medium hover:text-admin-text-primary"
-                        onClick={() => handleSort('progressStatus')}
-                      >
-                        進捗 {sortKey === 'progressStatus' && (sortAsc ? '↑' : '↓')}
-                      </th>
-                      <th className="px-3 py-2 text-left font-medium">Big Five</th>
-                      <th
-                        className="cursor-pointer px-3 py-2 text-right font-medium hover:text-admin-text-primary"
-                        onClick={() => handleSort('responseCount')}
-                      >
-                        回答 {sortKey === 'responseCount' && (sortAsc ? '↑' : '↓')}
-                      </th>
+                      <th className="px-4 py-2 text-left font-medium">生徒</th>
+                      <th className="px-3 py-2 text-left font-medium">進捗</th>
+                      <th className="px-3 py-2 text-right font-medium">回答</th>
+                      <th className="px-3 py-2 text-right font-medium">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-admin-border-primary">
                     {filteredStudents.length === 0 && (
                       <tr>
                         <td colSpan={4} className="px-4 py-8 text-center text-admin-text-tertiary">
-                          学生がいません
+                          参加者データがありません
                         </td>
                       </tr>
                     )}
-                    {filteredStudents.map((s) => (
-                      <tr key={s.id} className="hover:bg-admin-bg-secondary transition-colors">
+                    {filteredStudents.map((student) => (
+                      <tr key={student.id} className="transition-colors hover:bg-admin-bg-secondary">
                         <td className="px-4 py-2">
-                          <div className="text-admin-text-primary">{s.name || '匿名'}</div>
-                          <div className="text-xs text-admin-text-tertiary font-mono">{s.id.slice(0, 8)}</div>
+                          <div className="text-admin-text-primary">{student.name || '匿名'}</div>
+                          <div className="font-mono text-xs text-admin-text-tertiary">{student.id.slice(0, 8)}</div>
                         </td>
                         <td className="px-3 py-2">
-                          <span className={[
-                            'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
-                            s.progressStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                            s.progressStatus === 'QUESTIONS' ? 'bg-blue-100 text-blue-800' :
-                            s.progressStatus === 'NOT_STARTED' ? 'bg-gray-100 text-gray-600' :
-                            'bg-yellow-100 text-yellow-800',
-                          ].join(' ')}>
-                            {PROGRESS_LABELS[s.progressStatus] || s.progressStatus}
+                          <span className="inline-block rounded-full bg-admin-bg-secondary px-2 py-0.5 text-xs font-medium text-admin-text-primary">
+                            {PROGRESS_LABELS[student.progressStatus] || student.progressStatus}
                           </span>
                         </td>
-                        <td className="px-3 py-2">
-                          {s.bigFive ? (
-                            <div className="flex gap-1 text-xs text-admin-text-secondary">
-                              <span title="外向性">E{s.bigFive.extraversion}</span>
-                              <span title="協調性">A{s.bigFive.agreeableness}</span>
-                              <span title="誠実性">C{s.bigFive.conscientiousness}</span>
-                              <span title="神経症傾向">N{s.bigFive.neuroticism}</span>
-                              <span title="開放性">O{s.bigFive.openness}</span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-admin-text-tertiary">—</span>
-                          )}
+                        <td className="px-3 py-2 text-right">
+                          <span className="font-mono text-admin-text-primary">{student.responseCount}</span>
+                          <span className="text-admin-text-tertiary">/{displayStats?.questionCount ?? '?'}</span>
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <span className="font-mono text-admin-text-primary">{s.responseCount}</span>
-                          <span className="text-admin-text-tertiary">/{liveStats?.questionCount ?? '?'}</span>
+                          <button onClick={() => setResetTarget(student)} className="text-xs text-admin-accent-primary hover:underline">
+                            Big Fiveリセット
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -403,87 +452,46 @@ export default function AdminDashboardPage() {
               </div>
             </Card>
 
-            {/* 中央: 進捗統計 */}
             <Card tone="admin">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-body text-admin-text-primary">進捗統計</CardTitle>
               </CardHeader>
               <CardContent>
-                {liveStats ? (
-                  <div className="space-y-4">
-                    {/* 進捗分布 */}
-                    <div className="space-y-2">
-                      {[
-                        { label: '完了', value: liveStats.completed, color: 'bg-green-500' },
-                        { label: '質問回答中', value: liveStats.questions, color: 'bg-blue-500' },
-                        { label: 'テーマ選択', value: liveStats.themeSelection, color: 'bg-yellow-500' },
-                        { label: 'Big Five', value: liveStats.bigFive, color: 'bg-purple-500' },
-                        { label: '未開始', value: liveStats.notStarted, color: 'bg-gray-400' },
-                      ].map((item) => (
-                        <div key={item.label} className="flex items-center gap-2">
-                          <div className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
-                          <span className="flex-1 text-xs text-admin-text-secondary">{item.label}</span>
-                          <span className="text-xs font-medium text-admin-text-primary">{item.value}</span>
-                          <div className="w-16">
-                            <div className="h-1.5 rounded-full bg-admin-bg-secondary">
-                              <div
-                                className={`h-full rounded-full ${item.color} transition-all duration-300`}
-                                style={{ width: `${liveStats.total > 0 ? (item.value / liveStats.total) * 100 : 0}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                {displayStats ? (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>未開始</span>
+                      <span>{displayStats.notStarted}</span>
                     </div>
-
-                    {/* 数値サマリー */}
-                    <div className="grid grid-cols-2 gap-2 pt-2">
-                      <div className="rounded-lg bg-admin-bg-secondary p-3 text-center">
-                        <div className="text-2xl font-bold text-admin-text-primary">{liveStats.total}</div>
-                        <div className="text-xs text-admin-text-tertiary">参加者</div>
-                      </div>
-                      <div className="rounded-lg bg-admin-bg-secondary p-3 text-center">
-                        <div className="text-2xl font-bold text-admin-text-primary">{liveStats.totalResponses}</div>
-                        <div className="text-xs text-admin-text-tertiary">総回答数</div>
-                      </div>
-                      <div className="rounded-lg bg-admin-bg-secondary p-3 text-center">
-                        <div className="text-2xl font-bold text-admin-text-primary">
-                          {liveStats.total > 0 ? Math.round((liveStats.completed / liveStats.total) * 100) : 0}%
-                        </div>
-                        <div className="text-xs text-admin-text-tertiary">完了率</div>
-                      </div>
-                      <div className="rounded-lg bg-admin-bg-secondary p-3 text-center">
-                        <div className="text-2xl font-bold text-admin-text-primary">{liveStats.questionCount}</div>
-                        <div className="text-xs text-admin-text-tertiary">質問数</div>
-                      </div>
+                    <div className="flex justify-between">
+                      <span>Big Five</span>
+                      <span>{displayStats.bigFive}</span>
                     </div>
-
-                    {/* Big Five平均 */}
+                    <div className="flex justify-between">
+                      <span>テーマ選択</span>
+                      <span>{displayStats.themeSelection}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>読み物</span>
+                      <span>{displayStats.briefing ?? 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>設問回答</span>
+                      <span>{displayStats.questions}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>完了</span>
+                      <span>{displayStats.completed}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>回答総数</span>
+                      <span>{displayStats.totalResponses ?? '-'}</span>
+                    </div>
                     {bigFiveAvg && (
-                      <div className="pt-2">
-                        <div className="mb-2 text-xs font-medium text-admin-text-secondary">Big Five 平均</div>
-                        <div className="space-y-1">
-                          {([
-                            ['外向性', bigFiveAvg.extraversion],
-                            ['協調性', bigFiveAvg.agreeableness],
-                            ['誠実性', bigFiveAvg.conscientiousness],
-                            ['神経症傾向', bigFiveAvg.neuroticism],
-                            ['開放性', bigFiveAvg.openness],
-                          ] as [string, number][]).map(([label, val]) => (
-                            <div key={label} className="flex items-center gap-2">
-                              <span className="w-16 text-xs text-admin-text-tertiary">{label}</span>
-                              <div className="flex-1">
-                                <div className="h-1.5 rounded-full bg-admin-bg-secondary">
-                                  <div
-                                    className="h-full rounded-full bg-admin-accent-primary transition-all duration-300"
-                                    style={{ width: `${(val / 8) * 100}%` }}
-                                  />
-                                </div>
-                              </div>
-                              <span className="w-8 text-right text-xs font-mono text-admin-text-primary">{val}</span>
-                            </div>
-                          ))}
-                        </div>
+                      <div className="mt-3 border-t border-admin-border-primary pt-3 text-xs">
+                        <p className="mb-2 text-admin-text-secondary">Big Five平均</p>
+                        <p>E {bigFiveAvg.extraversion} / A {bigFiveAvg.agreeableness} / C {bigFiveAvg.conscientiousness}</p>
+                        <p>N {bigFiveAvg.neuroticism} / O {bigFiveAvg.openness}</p>
                       </div>
                     )}
                   </div>
@@ -493,59 +501,100 @@ export default function AdminDashboardPage() {
               </CardContent>
             </Card>
 
-            {/* 右: アクション */}
-            <div className="space-y-4">
-              <Card tone="admin">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base font-body text-admin-text-primary">アクション</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <Button
-                      onClick={() => handleExport('csv')}
-                      disabled={!sessionId}
-                      variant="secondary"
-                      className="w-full border-admin-border-primary text-admin-text-primary hover:bg-admin-bg-secondary text-sm"
-                    >
-                      CSV エクスポート
-                    </Button>
-                    <Button
-                      onClick={() => handleExport('json')}
-                      disabled={!sessionId}
-                      variant="secondary"
-                      className="w-full border-admin-border-primary text-admin-text-primary hover:bg-admin-bg-secondary text-sm"
-                    >
-                      JSON エクスポート
-                    </Button>
-                    <Button
-                      onClick={() => fetchStudents(sessionId)}
-                      disabled={!sessionId}
-                      variant="secondary"
-                      className="w-full border-admin-border-primary text-admin-text-primary hover:bg-admin-bg-secondary text-sm"
-                    >
-                      データ更新
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card tone="admin">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base font-body text-admin-text-primary">接続状態</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${sseData ? 'bg-green-500' : 'bg-gray-400'}`} />
-                    <span className="text-xs text-admin-text-secondary">
-                      {sseData ? 'リアルタイム接続中' : '未接続'}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <Card tone="admin">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-body text-admin-text-primary">アクション</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Button tone="admin" onClick={() => setExportPreviewFormat('csv')} disabled={!selectedSessionId} variant="secondary" className="w-full text-sm">
+                    CSV出力
+                  </Button>
+                  <Button tone="admin" onClick={() => setExportPreviewFormat('json')} disabled={!selectedSessionId} variant="secondary" className="w-full text-sm">
+                    JSON出力
+                  </Button>
+                  <Button
+                    tone="admin"
+                    onClick={() => router.push(`/admin/session/${encodeURIComponent(selectedSessionId)}/students`)}
+                    disabled={!selectedSessionId}
+                    variant="secondary"
+                    className="w-full text-sm"
+                  >
+                    参加者一覧へ
+                  </Button>
+                  <Button
+                    tone="admin"
+                    onClick={() => router.push(`/admin/session/${encodeURIComponent(selectedSessionId)}/responses`)}
+                    disabled={!selectedSessionId}
+                    variant="secondary"
+                    className="w-full text-sm"
+                  >
+                    回答分析へ
+                  </Button>
+                  <Button
+                    tone="admin"
+                    onClick={() => router.push(`/admin/session/${encodeURIComponent(selectedSessionId)}/review`)}
+                    disabled={!selectedSessionId}
+                    variant="secondary"
+                    className="w-full text-sm"
+                  >
+                    レビュー画面へ
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmAction === 'complete'}
+        title="セッションを完了しますか？"
+        description="進行中の生徒は回答を続けられますが、新規参加はできなくなります。"
+        confirmLabel="完了する"
+        destructive
+        onConfirm={() => void updateStatus('COMPLETED')}
+        onCancel={() => setConfirmAction(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmAction === 'archive'}
+        title="セッションをアーカイブしますか？"
+        description="アーカイブ後は一覧から非表示にできます。必要に応じて再開できます。"
+        confirmLabel="アーカイブ"
+        destructive
+        onConfirm={() => void updateStatus('ARCHIVED')}
+        onCancel={() => setConfirmAction(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(resetTarget)}
+        title="Big Five結果をリセットしますか？"
+        description={
+          resetTarget
+            ? `${resetTarget.name || '匿名の生徒'}のBig Five結果を削除し、進捗をBig Fiveへ戻します。`
+            : undefined
+        }
+        confirmLabel="リセットする"
+        destructive
+        onConfirm={() => void handleResetBigFive()}
+        onCancel={() => setResetTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(exportPreviewFormat)}
+        title="エクスポートの確認"
+        description={
+          exportPreviewFormat
+            ? `${exportPreviewFormat.toUpperCase()}形式で出力します。対象: ${displayStats?.total ?? session?.currentParticipants ?? 0}名 / 設問数: ${
+                displayStats?.questionCount ?? 0
+              }`
+            : undefined
+        }
+        confirmLabel="エクスポート"
+        onConfirm={handleExport}
+        onCancel={() => setExportPreviewFormat(null)}
+      />
     </main>
   )
 }

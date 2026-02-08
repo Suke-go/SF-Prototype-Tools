@@ -2,9 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Google Fonts: Noto Serif JP + Noto Sans JP */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@400;600;700&display=swap');
-
 @layer base {
   :root {
     /* 生徒側（ダークUI） */
@@ -16,9 +13,19 @@
     --student-text-secondary: #c8c8c8;
     --student-text-tertiary: #888888;
     --student-text-disabled: #555555;
-    --student-accent-red: #b71c1c;
-    --student-accent-blue: #1565c0;
-    --student-accent-gray: #505050;
+    
+    /* 回答ボタン — 価値判断を暗示しない中立色 (REM-C03) */
+    --student-answer-yes: #6b8299;      /* steel: hsl(210, 18%, 51%) */
+    --student-answer-no: #99806b;       /* tan:   hsl(30, 18%, 51%) */
+    --student-answer-unknown: #808080;  /* gray:  hsl(0, 0%, 50%)   */
+    --student-answer-yes-glow: rgba(107, 130, 153, 0.25);
+    --student-answer-no-glow: rgba(153, 128, 107, 0.25);
+
+    /* セマンティック用途（エラー表示等） */
+    --student-semantic-error: #b71c1c;  /* Original accent-red */
+    --student-semantic-info: #1565c0;   /* Original accent-blue */
+    --student-semantic-gray: #505050;   /* Original accent-gray */
+
     --student-border-primary: #2a2a2a;
     --student-border-secondary: #1a1a1a;
 
@@ -45,18 +52,46 @@
     @apply bg-student-bg-primary text-student-text-primary;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
-  /* マットな質感のためのセレクション */
-  ::selection {
-    background: rgba(255, 255, 255, 0.15);
-    color: #ffffff;
+  /* テキスト選択時の視認性（画面テーマ別） */
+  .admin-surface ::selection {
+    background: rgba(25, 118, 210, 0.25);
+    color: #0f172a;
+    text-shadow: none;
+  }
+
+  .admin-surface ::-moz-selection {
+    background: rgba(25, 118, 210, 0.25);
+    color: #0f172a;
+    text-shadow: none;
+  }
+
+  .student-surface ::selection {
+    background: rgba(255, 255, 255, 0.24);
+    color: #f8fafc;
+    text-shadow: none;
+  }
+
+  .student-surface ::-moz-selection {
+    background: rgba(255, 255, 255, 0.24);
+    color: #f8fafc;
+    text-shadow: none;
   }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .safe-area-main {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 }
 

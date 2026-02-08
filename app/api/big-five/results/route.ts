@@ -1,84 +1,118 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { saveBigFiveSchema } from '@/lib/validations/bigfive'
 import { computeBigFiveScores } from '@/lib/bigfive/scoring'
-import { getAuthContext } from '@/lib/middleware/auth'
+import { getAuthContext, requireStudent } from '@/lib/middleware/auth'
+import { zodErrorResponse } from '@/lib/api/zod-error'
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const auth = await getAuthContext(request)
-    if (!auth || auth.role !== 'student') {
+    const auth = requireStudent(await getAuthContext(request))
+    const sessionId = new URL(request.url).searchParams.get('sessionId')
+    if (!sessionId) {
       return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '認証が必要です' } },
-        { status: 401 }
+        { success: false, error: { code: 'INVALID_REQUEST', message: 'sessionIdが必要です' } },
+        { status: 400 }
+      )
+    }
+    if (sessionId !== auth.sessionId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: '別セッションの結果にはアクセスできません' } },
+        { status: 403 }
       )
     }
 
+    const result = await prisma.bigFiveResult.findUnique({
+      where: { studentId: auth.studentId! },
+      select: {
+        id: true,
+        extraversion: true,
+        agreeableness: true,
+        conscientiousness: true,
+        neuroticism: true,
+        openness: true,
+        completedAt: true,
+      },
+    })
+
+    return NextResponse.json({
+      success: true,
+      data: { result },
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'ログインが必要です' } },
+        { status: 401 }
+      )
+    }
+    console.error('BigFive fetch error:', error)
+    return NextResponse.json(
+      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Big Five結果の取得に失敗しました' } },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const auth = requireStudent(await getAuthContext(request))
     const body = await request.json()
     const validated = saveBigFiveSchema.parse(body)
 
     if (validated.sessionId !== auth.sessionId) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'セッションが一致しません' } },
-        { status: 403 }
-      )
-    }
-    if (!auth.studentId || validated.studentId !== auth.studentId) {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'studentIdが一致しません' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'トークンと結果保存対象が一致しません' } },
         { status: 403 }
       )
     }
 
-    // セッション存在確認
-    const session = await prisma.session.findUnique({ where: { id: validated.sessionId } })
-    if (!session) {
+    const studentId = auth.studentId!
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { id: true, sessionId: true, schoolId: true },
+    })
+    if (!student || student.sessionId !== validated.sessionId || student.schoolId !== auth.schoolId) {
       return NextResponse.json(
-        { success: false, error: { code: 'SESSION_NOT_FOUND', message: 'セッションが見つかりません' } },
+        { success: false, error: { code: 'STUDENT_NOT_FOUND', message: '生徒が見つかりません' } },
         { status: 404 }
       )
     }
 
-    // answersを { [n]: score } に変換
-    const answersMap: Record<number, number> = {}
-    for (const a of validated.answers) answersMap[a.questionNumber] = a.score
+    const existing = await prisma.bigFiveResult.findUnique({
+      where: { studentId },
+      select: { id: true },
+    })
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: { code: 'ALREADY_COMPLETED', message: 'Big Fiveは既に回答済みです' } },
+        { status: 409 }
+      )
+    }
 
-    // 必須10問チェック
-    for (let i = 1; i <= 10; i++) {
+    const answersMap: Record<number, number> = {}
+    for (const answer of validated.answers) answersMap[answer.questionNumber] = answer.score
+    for (let i = 1; i <= 10; i += 1) {
       if (answersMap[i] === undefined) {
         return NextResponse.json(
-          { success: false, error: { code: 'INVALID_REQUEST', message: `質問${i}の回答が不足しています` } },
+          { success: false, error: { code: 'INVALID_REQUEST', message: `設問${i}の回答が不足しています` } },
           { status: 400 }
         )
       }
     }
 
     const scores = computeBigFiveScores(answersMap)
-
-    // 学生の更新（join API で作成済み前提）
-    const student = await prisma.student.findUnique({ where: { id: validated.studentId } })
-    if (!student || student.sessionId !== validated.sessionId) {
-      return NextResponse.json(
-        { success: false, error: { code: 'STUDENT_NOT_FOUND', message: '学生が見つかりません' } },
-        { status: 404 }
-      )
-    }
-    await prisma.student.update({
-      where: { id: validated.studentId },
-      data: { progressStatus: 'THEME_SELECTION' },
+    const result = await prisma.bigFiveResult.create({
+      data: {
+        studentId,
+        ...scores,
+      },
     })
 
-    // BigFiveResult upsert（studentId unique）
-    const result = await prisma.bigFiveResult.upsert({
-      where: { studentId: validated.studentId },
-      create: {
-        studentId: validated.studentId,
-        ...scores,
-      },
-      update: {
-        ...scores,
-        completedAt: new Date(),
-      },
+    await prisma.student.update({
+      where: { id: studentId },
+      data: { progressStatus: 'THEME_SELECTION' },
     })
 
     return NextResponse.json(
@@ -95,18 +129,18 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    if (error instanceof Error && error.name === 'ZodError') {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'バリデーションエラー', details: error } },
-        { status: 400 }
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'ログインが必要です' } },
+        { status: 401 }
       )
     }
-
-    console.error('BigFive save error:', error)
+    const zodRes = zodErrorResponse(error)
+    if (zodRes) return zodRes
+    console.error('BigFive save error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
+      { success: false, error: { code: 'INTERNAL_ERROR', message: 'Big Five保存に失敗しました' } },
       { status: 500 }
     )
   }
 }
-

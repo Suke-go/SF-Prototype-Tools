@@ -24,7 +24,7 @@ npm install
 `.env`ファイルを作成し、以下の環境変数を設定してください：
 
 ```env
-DATABASE_URL="postgresql://USER:PASSWORD@HOST/DB?sslmode=require"
+DATABASE_URL="postgresql://USER:PASSWORD@HOST/DB?sslmode=require&connection_limit=5&pool_timeout=10"
 JWT_SECRET="your-secret-key"
 JWT_REFRESH_SECRET="your-refresh-secret-key"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"

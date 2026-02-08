@@ -1,74 +1,95 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { generateSessionId, hashPasscode } from '@/lib/auth/session'
+import { hashPasscode } from '@/lib/auth/session'
 import { createSessionSchema, updateSessionSchema } from '@/lib/validations/session'
-import { generateAccessToken, generateRefreshToken, verifyAccessToken } from '@/lib/auth/jwt'
-import { cookies } from 'next/headers'
+import { getAuthContext, requireAuth, requireTeacher } from '@/lib/middleware/auth'
+import { zodErrorResponse } from '@/lib/api/zod-error'
 
-// セッション作成
+function unauthorized(message = 'ログインが必要です') {
+  return NextResponse.json({ success: false, error: { code: 'UNAUTHORIZED', message } }, { status: 401 })
+}
+
 export async function POST(request: NextRequest) {
   try {
-    // NOTE: セッション作成は「初回は未ログインの管理者が行う」ため未認証で許可する。
-    // 作成成功後に管理者用Cookie（access/refresh）を発行してログイン状態にする。
-
-    const body = await request.json()
+    const auth = requireTeacher(await getAuthContext(request))
+    const body = await request.json().catch(() => ({}))
     const validatedData = createSessionSchema.parse(body)
 
-    // テーマの存在確認
-    const theme = await prisma.theme.findUnique({
-      where: { id: validatedData.themeId },
+    const themeIds = validatedData.themeIds
+    const themes = await prisma.theme.findMany({
+      where: {
+        id: { in: themeIds },
+        status: 'ACTIVE',
+      },
+      select: { id: true, title: true },
     })
 
-    if (!theme) {
+    const themeById = new Map(themes.map((theme) => [theme.id, theme] as const))
+    const selectedThemes = themeIds.map((themeId) => themeById.get(themeId)).filter(Boolean) as {
+      id: string
+      title: string
+    }[]
+
+    if (selectedThemes.length !== themeIds.length) {
       return NextResponse.json(
-        { success: false, error: { code: 'THEME_NOT_FOUND', message: 'テーマが見つかりません' } },
+        { success: false, error: { code: 'THEME_NOT_FOUND', message: '選択したテーマが見つかりません' } },
         { status: 404 }
       )
     }
 
-    // セッションIDの生成
-    const sessionId = generateSessionId()
-
-    // パスコードのハッシュ化
-    const passcodeHash = await hashPasscode(validatedData.passcode)
-
-    // セッション名は必須にしない（未入力ならテーマ名+日時で生成）
+    const primaryTheme = selectedThemes[0]
     const computedTitle =
       validatedData.title?.trim() ||
-      `${theme.title} ${new Date().toLocaleString('ja-JP', { hour12: false })}`
+      `${primaryTheme.title} ${new Date().toLocaleString('ja-JP', { hour12: false })}`
 
-    // セッションの作成
+    const normalizedSessionCode = validatedData.sessionCode.trim().toUpperCase()
+    const existsCode = await prisma.session.findUnique({
+      where: { sessionCode: normalizedSessionCode },
+      select: { id: true },
+    })
+    if (existsCode) {
+      return NextResponse.json(
+        { success: false, error: { code: 'SESSION_CODE_ALREADY_USED', message: 'そのセッションコードは既に使われています' } },
+        { status: 409 }
+      )
+    }
+
     const session = await prisma.session.create({
       data: {
-        id: sessionId,
+        sessionCode: normalizedSessionCode,
         title: computedTitle.slice(0, 100),
         description: validatedData.description,
-        schoolId: null, // TODO: Future Workでマルチテナント対応
-        themeId: validatedData.themeId,
+        schoolId: auth.schoolId,
+        teacherId: auth.teacherId!,
+        themeId: primaryTheme.id,
         maxParticipants: validatedData.maxParticipants,
-        passcodeHash,
+        passcodeHash: await hashPasscode(validatedData.passcode),
         status: 'PREPARING',
+        selectableThemes: {
+          create: selectedThemes.map((theme) => ({
+            themeId: theme.id,
+          })),
+        },
       },
       include: {
-        theme: true,
+        theme: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+        selectableThemes: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            theme: {
+              select: {
+                id: true,
+                title: true,
+              },
+            },
+          },
+        },
       },
-    })
-
-    // 管理者Cookieを発行（このセッションの管理者としてログイン）
-    const accessToken = generateAccessToken({ sessionId: session.id, role: 'admin' })
-    const refreshToken = generateRefreshToken({ sessionId: session.id, role: 'admin' })
-    const cookieStore = cookies()
-    cookieStore.set('accessToken', accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 15 * 60,
-    })
-    cookieStore.set('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 8 * 60 * 60,
     })
 
     return NextResponse.json(
@@ -77,8 +98,11 @@ export async function POST(request: NextRequest) {
         data: {
           session: {
             id: session.id,
+            sessionCode: session.sessionCode,
             title: session.title,
             status: session.status,
+            theme: session.theme,
+            themes: session.selectableThemes.map((entry) => entry.theme),
             createdAt: session.createdAt.toISOString(),
           },
         },
@@ -86,42 +110,109 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    if (error instanceof Error && error.name === 'ZodError') {
-      return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'バリデーションエラー', details: error } },
-        { status: 400 }
-      )
-    }
-
-    console.error('Session creation error:', error)
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') return unauthorized()
+    const zodRes = zodErrorResponse(error)
+    if (zodRes) return zodRes
+    console.error('Session creation error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
+      { success: false, error: { code: 'INTERNAL_ERROR', message: 'セッション作成に失敗しました' } },
       { status: 500 }
     )
   }
 }
 
-// 現在のセッション取得
 export async function GET(request: NextRequest) {
   try {
+    const auth = requireAuth(await getAuthContext(request))
     const { searchParams } = new URL(request.url)
     const sessionId = searchParams.get('sessionId')
 
     if (!sessionId) {
-      return NextResponse.json(
-        { success: false, error: { code: 'INVALID_REQUEST', message: 'セッションIDが必要です' } },
-        { status: 400 }
-      )
+      if (auth.role !== 'teacher') return unauthorized()
+      const status = searchParams.get('status')
+      const q = searchParams.get('q')?.trim()
+      const from = searchParams.get('from')
+      const to = searchParams.get('to')
+      const skipRaw = Number(searchParams.get('skip') || '0')
+      const skip = Number.isFinite(skipRaw) && skipRaw > 0 ? Math.floor(skipRaw) : 0
+
+      const createdAtFilter: { gte?: Date; lte?: Date } = {}
+      if (from) createdAtFilter.gte = new Date(`${from}T00:00:00.000Z`)
+      if (to) createdAtFilter.lte = new Date(`${to}T23:59:59.999Z`)
+
+      const sessions = await prisma.session.findMany({
+        where: {
+          schoolId: auth.schoolId,
+          teacherId: auth.teacherId,
+          ...(status ? { status: status as 'PREPARING' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED' } : {}),
+          ...(q
+            ? {
+              OR: [
+                { title: { contains: q } },
+                { sessionCode: { contains: q.toUpperCase() } },
+              ],
+            }
+            : {}),
+          ...(from || to ? { createdAt: createdAtFilter } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: 20,
+        select: {
+          id: true,
+          sessionCode: true,
+          title: true,
+          status: true,
+          createdAt: true,
+          theme: { select: { id: true, title: true } },
+          selectableThemes: {
+            orderBy: { createdAt: 'asc' },
+            select: { theme: { select: { id: true, title: true } } },
+          },
+          _count: { select: { students: true } },
+        },
+      })
+      return NextResponse.json({
+        success: true,
+        data: {
+          sessions: sessions.map((session) => ({
+            id: session.id,
+            sessionCode: session.sessionCode,
+            title: session.title,
+            status: session.status,
+            theme: session.theme,
+            themes: session.selectableThemes.map((entry) => entry.theme),
+            participantCount: session._count.students,
+            createdAt: session.createdAt.toISOString(),
+          })),
+        },
+      })
     }
 
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
+    const where =
+      auth.role === 'teacher'
+        ? { id: sessionId, schoolId: auth.schoolId, teacherId: auth.teacherId }
+        : { id: sessionId, schoolId: auth.schoolId }
+
+    const session = await prisma.session.findFirst({
+      where,
       include: {
         theme: true,
-        _count: {
-          select: {
-            students: true,
+        selectableThemes: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            theme: {
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                imageUrl: true,
+              },
+            },
           },
+        },
+        _count: {
+          select: { students: true },
         },
       },
     })
@@ -133,15 +224,24 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    if (auth.role === 'student' && auth.sessionId !== session.id) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'このセッションにはアクセスできません' } },
+        { status: 403 }
+      )
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         session: {
           id: session.id,
+          sessionCode: session.sessionCode,
           title: session.title,
           description: session.description,
           themeId: session.themeId,
           theme: session.theme,
+          themes: session.selectableThemes.map((entry) => entry.theme),
           status: session.status,
           maxParticipants: session.maxParticipants,
           currentParticipants: session._count.students,
@@ -151,57 +251,44 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') return unauthorized()
     console.error('Session fetch error:', error)
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
+      { success: false, error: { code: 'INTERNAL_ERROR', message: 'セッション取得に失敗しました' } },
       { status: 500 }
     )
   }
 }
 
-// セッション更新
 export async function PUT(request: NextRequest) {
   try {
-    // 認証チェック（管理者のみ）
-    const cookieStore = cookies()
-    const accessToken = cookieStore.get('accessToken')?.value
-
-    if (!accessToken) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '認証が必要です' } },
-        { status: 401 }
-      )
-    }
-
-    try {
-      const payload = verifyAccessToken(accessToken)
-      if (payload.role !== 'admin') {
-        return NextResponse.json(
-          { success: false, error: { code: 'FORBIDDEN', message: '権限がありません' } },
-          { status: 403 }
-        )
-      }
-    } catch (error) {
-      return NextResponse.json(
-        { success: false, error: { code: 'UNAUTHORIZED', message: '認証トークンが無効です' } },
-        { status: 401 }
-      )
-    }
-
-    const body = await request.json()
+    const auth = requireTeacher(await getAuthContext(request))
+    const body = await request.json().catch(() => ({}))
     const validatedData = updateSessionSchema.parse(body)
-
-    // セッションIDの取得（リクエストボディまたはクエリパラメータから）
     const sessionId = body.sessionId || new URL(request.url).searchParams.get('sessionId')
 
     if (!sessionId) {
       return NextResponse.json(
-        { success: false, error: { code: 'INVALID_REQUEST', message: 'セッションIDが必要です' } },
+        { success: false, error: { code: 'INVALID_REQUEST', message: 'sessionIdが必要です' } },
         { status: 400 }
       )
     }
 
-    // セッションの更新
+    const target = await prisma.session.findFirst({
+      where: {
+        id: sessionId,
+        teacherId: auth.teacherId,
+        schoolId: auth.schoolId,
+      },
+      select: { id: true },
+    })
+    if (!target) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'このセッションを更新する権限がありません' } },
+        { status: 403 }
+      )
+    }
+
     const session = await prisma.session.update({
       where: { id: sessionId },
       data: {
@@ -223,16 +310,12 @@ export async function PUT(request: NextRequest) {
       },
     })
   } catch (error) {
-    if (error instanceof Error && error.name === 'ZodError') {
-      return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'バリデーションエラー', details: error } },
-        { status: 400 }
-      )
-    }
-
-    console.error('Session update error:', error)
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') return unauthorized()
+    const zodRes = zodErrorResponse(error)
+    if (zodRes) return zodRes
+    console.error('Session update error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
+      { success: false, error: { code: 'INTERNAL_ERROR', message: 'セッション更新に失敗しました' } },
       { status: 500 }
     )
   }
