@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { Accordion, Button, Card, CardContent, CardHeader, CardTitle, LoadingSpinner } from '@/components/ui'
 import { StepIndicator } from '@/components/common/StepIndicator'
@@ -305,7 +305,9 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
     return found
   }
 
-  function handleCanvasMove(event: MouseEvent<HTMLCanvasElement>) {
+  function handleCanvasPointerMove(event: PointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType === 'touch') return
+
     const point = pickPoint(event.clientX, event.clientY)
     if (!point) {
       setTooltip(null)
@@ -322,9 +324,23 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
     })
   }
 
-  function handleCanvasClick(event: MouseEvent<HTMLCanvasElement>) {
+  function handleCanvasPointerDown(event: PointerEvent<HTMLCanvasElement>) {
     const point = pickPoint(event.clientX, event.clientY)
     setSelected(point)
+
+    if (!point) {
+      setTooltip(null)
+      return
+    }
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    setTooltip({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top - 30,
+      text: point.isSelf ? 'あなたの位置' : CLUSTER_PALETTE[point.cluster % CLUSTER_PALETTE.length].label,
+    })
   }
 
   const clusterCounts = useMemo(() => {
@@ -419,6 +435,7 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
       <div className="mb-6">
         <h1 className="font-heading text-3xl font-bold text-student-text-primary">みんなの考えマップ</h1>
         <p className="mt-1 text-sm text-student-text-tertiary">回答が似ている人ほど近くに表示されます。座標の数字そのものには意味はありません。</p>
+        <p className="mt-1 text-xs text-student-text-disabled">点にマウスを重ねるか、タップして詳細を確認できます。</p>
         {(selectedThemeId || sessionData?.selectedThemeId) && (
           <p className="mt-2 text-xs text-student-text-disabled">選択テーマに合わせた可視化です。</p>
         )}
@@ -455,9 +472,9 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
               style={{ aspectRatio: '4 / 3' }}
               role="img"
               aria-label={`意見マップ: ${umapResults.length}人の回答を${new Set(umapResults.map((r) => r.cluster)).size}個のタイプに分類した散布図`}
-              onMouseMove={handleCanvasMove}
-              onClick={handleCanvasClick}
-              onMouseLeave={() => setTooltip(null)}
+              onPointerMove={handleCanvasPointerMove}
+              onPointerDown={handleCanvasPointerDown}
+              onPointerLeave={() => setTooltip(null)}
             />
             {tooltip && (
               <div

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingSpinner } from '@/components/ui'
 import { fetchWithRetry } from '@/lib/fetch-with-retry'
+import { getSessionStatusLabel } from '@/lib/constants/session-status'
 
 type SessionSummary = {
   id: string
@@ -126,10 +127,10 @@ export default function AdminBoardPage() {
                 className="w-full rounded-md border border-admin-border-primary bg-admin-bg-primary px-3 py-2 text-sm text-admin-text-primary"
               >
                 <option value="">すべて</option>
-                <option value="PREPARING">PREPARING</option>
-                <option value="ACTIVE">ACTIVE</option>
-                <option value="COMPLETED">COMPLETED</option>
-                <option value="ARCHIVED">ARCHIVED</option>
+                <option value="PREPARING">{getSessionStatusLabel('PREPARING')}</option>
+                <option value="ACTIVE">{getSessionStatusLabel('ACTIVE')}</option>
+                <option value="COMPLETED">{getSessionStatusLabel('COMPLETED')}</option>
+                <option value="ARCHIVED">{getSessionStatusLabel('ARCHIVED')}</option>
               </select>
             </div>
             <Input
@@ -208,7 +209,7 @@ export default function AdminBoardPage() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-admin-text-secondary">状態: {session.status}</p>
+                        <p className="text-xs text-admin-text-secondary">状態: {getSessionStatusLabel(session.status)}</p>
                         <p className="text-xs text-admin-text-secondary">参加者: {session.participantCount}</p>
                         <p className="text-xs text-admin-text-tertiary">作成: {new Date(session.createdAt).toLocaleString('ja-JP')}</p>
                       </div>

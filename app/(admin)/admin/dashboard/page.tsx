@@ -6,6 +6,7 @@ import { Button, Card, CardContent, CardHeader, CardTitle, LoadingSpinner } from
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { SessionShareCard } from '@/components/common/SessionShareCard'
 import { fetchWithRetry } from '@/lib/fetch-with-retry'
+import { getSessionStatusLabel } from '@/lib/constants/session-status'
 
 type BigFive = {
   extraversion: number
@@ -364,7 +365,7 @@ export default function AdminDashboardPage() {
               <div>
                 <div className="text-lg font-semibold text-admin-text-primary">{session.title}</div>
                 <div className="text-sm text-admin-text-tertiary">
-                  状態: <span className="font-medium text-admin-text-primary">{session.status}</span>
+                  状態: <span className="font-medium text-admin-text-primary">{getSessionStatusLabel(session.status)}</span>
                   {' / '}参加者:{' '}
                   <span className="font-medium text-admin-text-primary">
                     {displayStats?.total ?? session.currentParticipants} / {session.maxParticipants}

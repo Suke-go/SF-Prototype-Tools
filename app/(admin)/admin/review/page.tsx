@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingSpinner } from '@/components/ui'
+import { Button, Card, CardContent, CardHeader, CardTitle, LoadingSpinner } from '@/components/ui'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { MOONSHOT_GOAL_TITLE_MAP } from '@/lib/moonshot/goals'
+import { fetchWithRetry } from '@/lib/fetch-with-retry'
 
 type ReviewLog = {
   id: string
@@ -29,12 +30,20 @@ type DraftReview = {
   comment: string
 }
 
+type SessionOption = {
+  id: string
+  title: string
+  sessionCode: string | null
+}
+
 export default function AdminReviewPage() {
   const router = useRouter()
   const [sessionId, setSessionId] = useState('')
+  const [sessions, setSessions] = useState<SessionOption[]>([])
   const [logs, setLogs] = useState<ReviewLog[]>([])
   const [drafts, setDrafts] = useState<Record<string, DraftReview>>({})
   const [loading, setLoading] = useState(false)
+  const [loadingSessions, setLoadingSessions] = useState(false)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [bulkSaving, setBulkSaving] = useState(false)
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
@@ -49,11 +58,40 @@ export default function AdminReviewPage() {
   const goalTitleMap = useMemo(() => MOONSHOT_GOAL_TITLE_MAP, [])
 
   useEffect(() => {
-    const url = new URL(window.location.href)
-    const id = url.searchParams.get('sessionId') || localStorage.getItem('admin:lastSessionId') || ''
-    setSessionId(id)
-    if (id) void fetchLogs(id)
+    let cancelled = false
+
+    async function bootstrap() {
+      const url = new URL(window.location.href)
+      const preferredId = url.searchParams.get('sessionId') || localStorage.getItem('admin:lastSessionId') || ''
+      const list = await fetchSessionOptions()
+      if (cancelled) return
+      const initialId = preferredId || list[0]?.id || ''
+      setSessionId(initialId)
+      if (initialId) void fetchLogs(initialId)
+    }
+
+    void bootstrap()
+    return () => {
+      cancelled = true
+    }
   }, [])
+
+  async function fetchSessionOptions() {
+    try {
+      setLoadingSessions(true)
+      const res = await fetchWithRetry('/api/session', { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message || 'セッション一覧の取得に失敗しました')
+      const list: SessionOption[] = json?.data?.sessions || []
+      setSessions(list)
+      return list
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'セッション一覧の取得に失敗しました')
+      return []
+    } finally {
+      setLoadingSessions(false)
+    }
+  }
 
   async function fetchLogs(id: string) {
     try {
@@ -64,6 +102,7 @@ export default function AdminReviewPage() {
       if (!res.ok) throw new Error(json?.error?.message || 'レビュー一覧の取得に失敗しました')
       const list: ReviewLog[] = json.data.logs
       setLogs(list)
+      localStorage.setItem('admin:lastSessionId', id)
 
       const initialDrafts: Record<string, DraftReview> = {}
       for (const log of list) {
@@ -188,17 +227,38 @@ export default function AdminReviewPage() {
           <p className="mt-1 text-sm text-admin-text-tertiary">観点: 理解・根拠・対話可能性（各1-4点）</p>
         </div>
         <div className="w-80">
-          <Input
+          <label className="mb-1 block text-xs text-admin-text-tertiary">セッション</label>
+          <select
             value={sessionId}
-            onChange={(event) => setSessionId(event.target.value)}
-            placeholder="セッションID"
-            className="border-admin-border-primary bg-admin-bg-primary text-admin-text-primary"
-          />
+            onChange={(event) => {
+              const nextId = event.target.value
+              setSessionId(nextId)
+              if (nextId) {
+                void fetchLogs(nextId)
+              } else {
+                setLogs([])
+              }
+            }}
+            className="w-full rounded-md border border-admin-border-primary bg-admin-bg-primary px-3 py-2 text-sm text-admin-text-primary"
+            disabled={loadingSessions}
+          >
+            {!sessionId && <option value="">選択してください</option>}
+            {sessions.map((session) => (
+              <option key={session.id} value={session.id}>
+                {session.title}
+                {session.sessionCode ? ` (${session.sessionCode})` : ''}
+              </option>
+            ))}
+          </select>
         </div>
         <Button tone="admin" onClick={() => sessionId && void fetchLogs(sessionId)} disabled={!sessionId || loading}>
-          {loading ? '読込中...' : '読み込む'}
+          {loading ? '読込中...' : '再読み込み'}
         </Button>
-        <Button tone="admin" variant="secondary" onClick={() => router.push(`/admin/board?sessionId=${encodeURIComponent(sessionId)}`)}>
+        <Button
+          tone="admin"
+          variant="secondary"
+          onClick={() => router.push(sessionId ? `/admin/board?sessionId=${encodeURIComponent(sessionId)}` : '/admin/board')}
+        >
           ボードへ
         </Button>
       </div>

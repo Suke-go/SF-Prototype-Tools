@@ -23,6 +23,7 @@ export function StepIndicator({ steps, currentKey, completedKeys, onNavigate }: 
           const isCurrent = step.key === currentKey
           const isCompleted = completedKeys.includes(step.key)
           const isClickable = Boolean(onNavigate && isCompleted && !isCurrent)
+          const statusLabel = isCurrent ? '現在のステップ' : isCompleted ? '完了済み' : '未到達'
 
           return (
             <li key={step.key} className="flex items-center gap-1">
@@ -32,15 +33,17 @@ export function StepIndicator({ steps, currentKey, completedKeys, onNavigate }: 
                 onClick={() => isClickable && onNavigate?.(step.path)}
                 disabled={!isClickable}
                 aria-current={isCurrent ? 'step' : undefined}
+                aria-label={`${index + 1}. ${step.label} (${statusLabel})`}
                 className={cn(
-                  'flex h-7 min-w-[44px] items-center justify-center rounded-full px-2 text-xs transition-colors',
+                  'flex h-8 min-w-[44px] items-center justify-center gap-1 rounded-full px-2 text-xs transition-colors',
                   isCurrent && 'bg-student-text-primary text-black',
                   isCompleted && !isCurrent && 'bg-student-bg-tertiary text-student-text-primary hover:bg-student-bg-elevated',
                   !isCurrent && !isCompleted && 'bg-student-bg-primary text-student-text-disabled'
                 )}
                 title={step.label}
               >
-                {isCompleted && !isCurrent ? '✓' : index + 1}
+                <span className="font-mono">{isCompleted && !isCurrent ? '✓' : index + 1}</span>
+                <span className={cn(isCurrent ? 'inline font-medium' : 'hidden sm:inline')}>{step.label}</span>
               </button>
             </li>
           )

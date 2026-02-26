@@ -61,7 +61,7 @@ export default function StudentSessionPage({ params }: { params: { sessionId: st
   }, [router, sessionId])
 
   async function joinFromSessionPage() {
-    if (!passcode.trim()) return
+    if (passcode.trim().length < 4) return
     setError(null)
     setJoining(true)
     try {
@@ -119,11 +119,13 @@ export default function StudentSessionPage({ params }: { params: { sessionId: st
               type="password"
               value={passcode}
               onChange={(event) => setPasscode(event.target.value)}
-              placeholder="参加コード"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="数字4桁以上の参加コード"
               className="text-center font-mono"
               onKeyDown={(event) => event.key === 'Enter' && joinFromSessionPage()}
             />
-            <Button onClick={() => void joinFromSessionPage()} disabled={joining || !passcode.trim()} className="w-full">
+            <Button onClick={() => void joinFromSessionPage()} disabled={joining || passcode.trim().length < 4} className="w-full">
               {joining ? '参加中...' : 'このセッションに参加'}
             </Button>
             <Button variant="secondary" onClick={() => router.push('/student')} className="w-full">
@@ -162,6 +164,19 @@ export default function StudentSessionPage({ params }: { params: { sessionId: st
           >
             {nextPath && !nextPath.endsWith('/big-five') ? '続きから再開' : 'Big Five 診断へ'}
           </Button>
+        </div>
+
+        {/* U6: セッション離脱 */}
+        <div className="mt-6 text-center fade-in" style={{ animationDelay: '800ms' }}>
+          <button
+            onClick={() => {
+              document.cookie = 'studentToken=; path=/; max-age=0'
+              router.push('/student')
+            }}
+            className="text-xs text-student-text-disabled transition-colors hover:text-student-text-tertiary"
+          >
+            セッションを離れる
+          </button>
         </div>
       </div>
     </main>

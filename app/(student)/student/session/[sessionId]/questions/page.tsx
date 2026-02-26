@@ -21,11 +21,17 @@ export default function QuestionsPage({ params }: { params: { sessionId: string 
   const [failedQueue, setFailedQueue] = useState<FailedAnswer[]>([])
   const [submitting, setSubmitting] = useState(false)
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const restoredRef = useRef(false)
 
   const themeId = useMemo(() => {
     if (typeof window === 'undefined') return ''
     return new URLSearchParams(window.location.search).get('themeId') || ''
   }, [])
+
+  const draftStorageKey = useMemo(() => {
+    if (!themeId) return ''
+    return `student:questions:draft:${sessionId}:${themeId}`
+  }, [sessionId, themeId])
 
   useEffect(() => {
     if (!themeId) return
@@ -49,6 +55,83 @@ export default function QuestionsPage({ params }: { params: { sessionId: string 
       cancelled = true
     }
   }, [sessionId, themeId])
+
+  useEffect(() => {
+    if (!themeId) {
+      setLoading(false)
+      setError('テーマ情報が見つかりません。テーマ選択画面からやり直してください。')
+    }
+  }, [themeId])
+
+  useEffect(() => {
+    if (loading || questions.length === 0 || restoredRef.current || !draftStorageKey) return
+    restoredRef.current = true
+
+    try {
+      const raw = sessionStorage.getItem(draftStorageKey)
+      if (!raw) return
+
+      const parsed = JSON.parse(raw) as {
+        index?: number
+        answers?: Record<string, ResponseValue>
+        failedQueue?: FailedAnswer[]
+      }
+
+      const validIds = new Set(questions.map((question) => question.id))
+      const restoredAnswers: Record<string, ResponseValue> = {}
+      for (const [questionId, value] of Object.entries(parsed.answers || {})) {
+        if (!validIds.has(questionId)) continue
+        if (value === 'YES' || value === 'NO' || value === 'UNKNOWN') {
+          restoredAnswers[questionId] = value
+        }
+      }
+
+      const restoredFailedQueue = (parsed.failedQueue || []).filter(
+        (item) =>
+          validIds.has(item.questionId) &&
+          (item.value === 'YES' || item.value === 'NO' || item.value === 'UNKNOWN')
+      )
+
+      const firstUnansweredIndex = questions.findIndex((question) => restoredAnswers[question.id] === undefined)
+      const fallbackIndex = firstUnansweredIndex === -1 ? questions.length - 1 : firstUnansweredIndex
+      const restoredIndex =
+        typeof parsed.index === 'number'
+          ? Math.min(Math.max(parsed.index, 0), questions.length - 1)
+          : fallbackIndex
+
+      setAnswers(restoredAnswers)
+      setFailedQueue(restoredFailedQueue)
+      setIndex(restoredIndex)
+    } catch {
+      // ignore invalid draft payload
+    }
+  }, [draftStorageKey, loading, questions])
+
+  useEffect(() => {
+    if (loading || questions.length === 0 || !draftStorageKey) return
+
+    const payload = {
+      index,
+      answers,
+      failedQueue,
+      updatedAt: new Date().toISOString(),
+    }
+    sessionStorage.setItem(draftStorageKey, JSON.stringify(payload))
+  }, [answers, draftStorageKey, failedQueue, index, loading, questions.length])
+
+  useEffect(() => {
+    if (failedQueue.length === 0) return
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+    }
+  }, [failedQueue.length])
 
   const current = questions[index]
   const isLast = index === questions.length - 1
@@ -148,6 +231,7 @@ export default function QuestionsPage({ params }: { params: { sessionId: string 
         setSubmitting(false)
         return
       }
+      if (draftStorageKey) sessionStorage.removeItem(draftStorageKey)
       router.push(`/student/session/${encodeURIComponent(sessionId)}/questions/complete?themeId=${themeId}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存に失敗しました')
@@ -194,6 +278,11 @@ export default function QuestionsPage({ params }: { params: { sessionId: string 
         <ProgressBar value={index + 1} max={questions.length} />
         <p className="mt-3 text-xs text-student-text-disabled">
           正解はありません。直感で、いまのあなたに近い選択をしてください。
+        </p>
+        <p className="mt-1 text-xs text-student-text-disabled">
+          {failedQueue.length > 0
+            ? '未送信の回答があります。通信回復後に自動再送します。'
+            : '回答はこの端末に下書き保存されます。'}
         </p>
 
         <div className="mt-10 fade-in" key={index}>

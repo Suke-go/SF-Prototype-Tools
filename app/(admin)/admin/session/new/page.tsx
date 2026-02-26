@@ -72,7 +72,8 @@ export default function AdminNewSessionPage() {
     const codeOk = /^[A-Za-z0-9_-]{4,32}$/.test(sessionCode.trim())
     const maxParticipants = Number(maxParticipantsText)
     const maxOk = Number.isInteger(maxParticipants) && maxParticipants >= 1 && maxParticipants <= 200
-    return selectedThemeIds.length > 0 && codeOk && maxOk && passcode.trim().length >= 4 && !submitting
+    const passcodeOk = /^\d{4,}$/.test(passcode.trim())
+    return selectedThemeIds.length > 0 && codeOk && maxOk && passcodeOk && !submitting
   }, [selectedThemeIds, sessionCode, maxParticipantsText, passcode, submitting])
 
   async function onSubmit() {
@@ -238,10 +239,13 @@ export default function AdminNewSessionPage() {
                     label="参加コード"
                     type="password"
                     value={passcode}
-                    onChange={(e) => setPasscode(e.target.value)}
+                    onChange={(e) => setPasscode(e.target.value.replace(/\D/g, ''))}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     placeholder="4桁以上の数字（例: 2468）"
                     className="border-admin-border-primary bg-admin-bg-primary text-admin-text-primary"
                   />
+                  <p className="text-xs text-admin-text-tertiary">数字のみ、4桁以上で入力してください</p>
                 </div>
               </div>
 

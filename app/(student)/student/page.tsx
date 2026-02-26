@@ -1,27 +1,43 @@
 ﻿'use client'
 
-import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { Button, Input } from '@/components/ui'
 import { fetchWithRetry } from '@/lib/fetch-with-retry'
+import { toHalfWidth } from '@/lib/utils/normalize'
 
 export default function StudentJoinPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [sessionCode, setSessionCode] = useState('')
   const [passcode, setPasscode] = useState('')
   const [studentName, setStudentName] = useState('')
+  const [showPasscode, setShowPasscode] = useState(false)
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
 
+  // U1: URLクエリパラメータでセッションコード事前入力
+  useEffect(() => {
+    const code = searchParams.get('code')
+    if (code) setSessionCode(toHalfWidth(code.trim().toUpperCase()))
+  }, [searchParams])
+
   const canJoin = useMemo(
-    () => sessionCode.trim().length > 0 && passcode.trim().length > 0,
-    [sessionCode, passcode]
+    () => sessionCode.trim().length > 0 && passcode.trim().length >= 4 && agreedToTerms,
+    [sessionCode, passcode, agreedToTerms]
   )
+
+  // U3: 全角→半角自動変換
+  function handleSessionCodeChange(value: string) {
+    setSessionCode(toHalfWidth(value).toUpperCase())
+  }
 
   async function onJoin() {
     const code = sessionCode.trim().toUpperCase()
     const joinPasscode = passcode.trim()
-    if (!code || !joinPasscode) return
+    if (!code || !joinPasscode || !agreedToTerms) return
 
     setError(null)
     try {
@@ -69,9 +85,10 @@ export default function StudentJoinPage() {
             </div>
           )}
 
+          {/* U4: 匿名ヘルパーテキスト */}
           <Input
             label="表示名（任意）"
-            helperText="この名前は学習ログに表示されます"
+            helperText="未入力の場合は「匿名」として表示されます"
             value={studentName}
             onChange={(event) => setStudentName(event.target.value)}
             placeholder="例: 山田太郎"
@@ -80,20 +97,55 @@ export default function StudentJoinPage() {
           <Input
             label="セッションコード"
             value={sessionCode}
-            onChange={(event) => setSessionCode(event.target.value)}
+            onChange={(event) => handleSessionCodeChange(event.target.value)}
             placeholder="例: MOONSHOT-A"
             className="text-center font-mono text-base tracking-wider"
             onKeyDown={(event) => event.key === 'Enter' && onJoin()}
           />
-          <Input
-            label="参加コード"
-            value={passcode}
-            onChange={(event) => setPasscode(event.target.value)}
-            type="password"
-            placeholder="4桁以上の数字（例: 2468）"
-            className="text-center font-mono text-base tracking-wider"
-            onKeyDown={(event) => event.key === 'Enter' && onJoin()}
-          />
+
+          {/* U2: パスコード表示トグル */}
+          <div className="relative">
+            <Input
+              label="参加コード"
+              helperText="数字4桁以上のコードを入力してください"
+              value={passcode}
+              onChange={(event) => setPasscode(event.target.value)}
+              type={showPasscode ? 'text' : 'password'}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="例: 2468"
+              className="text-center font-mono text-base tracking-wider pr-12"
+              onKeyDown={(event) => event.key === 'Enter' && onJoin()}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPasscode(!showPasscode)}
+              className="absolute right-3 top-[38px] p-1 text-student-text-disabled transition-colors hover:text-student-text-secondary"
+              aria-label={showPasscode ? 'パスコードを隠す' : 'パスコードを表示'}
+            >
+              {showPasscode ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+              )}
+            </button>
+          </div>
+
+          {/* U5: プライバシー同意チェックボックス */}
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={agreedToTerms}
+              onChange={(event) => setAgreedToTerms(event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-student-border-primary bg-transparent accent-white"
+            />
+            <span className="text-xs leading-relaxed text-student-text-tertiary">
+              <Link href="/terms" target="_blank" className="underline hover:text-student-text-secondary">利用規約</Link>
+              と
+              <Link href="/privacy" target="_blank" className="underline hover:text-student-text-secondary">プライバシーポリシー</Link>
+              に同意します
+            </span>
+          </label>
 
           <Button onClick={onJoin} disabled={!canJoin || joining} className="w-full rounded-xl py-6 text-base">
             {joining ? '認証中...' : 'このセッションに入る'}

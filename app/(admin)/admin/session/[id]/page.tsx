@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, CardContent, CardHeader, CardTitle, LoadingSpinner } from '@/components/ui'
 import { fetchWithRetry } from '@/lib/fetch-with-retry'
+import { getSessionStatusLabel } from '@/lib/constants/session-status'
 
 type SessionDetail = {
   id: string
@@ -80,7 +81,7 @@ export default function AdminSessionDetailPage({ params }: { params: { id: strin
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-admin-text-secondary">
             <p>SessionCode: {session.sessionCode || '-'}</p>
-            <p>状態: {session.status}</p>
+            <p>状態: {getSessionStatusLabel(session.status)}</p>
             <p>
               参加者: {session.currentParticipants} / {session.maxParticipants}
             </p>

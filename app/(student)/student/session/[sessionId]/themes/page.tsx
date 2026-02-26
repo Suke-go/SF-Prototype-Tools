@@ -48,11 +48,10 @@ export default function ThemeSelectionPage({ params }: { params: { sessionId: st
   }, [sessionId])
 
   function selectTheme(themeId: string) {
+    if (selected !== null) return
     setSelected(themeId)
     localStorage.setItem(`student:theme:${sessionId}`, themeId)
-    setTimeout(() => {
-      router.push(`/student/session/${encodeURIComponent(sessionId)}/themes/${themeId}`)
-    }, 300)
+    router.push(`/student/session/${encodeURIComponent(sessionId)}/themes/${themeId}`)
   }
 
   if (loading) {
@@ -95,6 +94,7 @@ export default function ThemeSelectionPage({ params }: { params: { sessionId: st
             key={theme.id}
             onClick={() => selectTheme(theme.id)}
             disabled={selected !== null}
+            aria-busy={selected === theme.id}
             className={[
               'group text-left transition-all duration-normal',
               'relative overflow-hidden rounded-2xl border border-student-border-primary bg-student-bg-tertiary',
@@ -132,10 +132,16 @@ export default function ThemeSelectionPage({ params }: { params: { sessionId: st
               {theme.description && <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-white/70">{theme.description}</p>}
 
               <div className="mt-5 flex items-center justify-between">
-                <span className="text-xs text-white/55">このテーマを読む</span>
-                <span className="text-white/65 transition-transform duration-normal group-hover:translate-x-1" aria-hidden>
-                  →
-                </span>
+                {selected === theme.id ? (
+                  <span className="text-xs text-white/70">移動中...</span>
+                ) : (
+                  <>
+                    <span className="text-xs text-white/55">このテーマを読む</span>
+                    <span className="text-white/65 transition-transform duration-normal group-hover:translate-x-1" aria-hidden>
+                      →
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </button>

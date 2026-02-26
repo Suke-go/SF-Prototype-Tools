@@ -252,7 +252,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') return unauthorized()
-    console.error('Session fetch error:', error)
+    console.error('Session fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'セッション取得に失敗しました' } },
       { status: 500 }

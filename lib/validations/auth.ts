@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
 export const teacherRegisterSchema = z.object({
+  inviteCode: z
+    .string()
+    .trim()
+    .min(1, '招待コードは必須です')
+    .max(64, '招待コードが長すぎます'),
   schoolCode: z
     .string()
     .trim()

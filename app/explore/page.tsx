@@ -29,10 +29,10 @@ export default function ExplorePage() {
         setError(null)
         const res = await fetch('/api/themes?status=ACTIVE', { cache: 'no-store' })
         const json = await res.json()
-        if (!res.ok) throw new Error(json?.error?.message || 'テーマ取得に失敗しました')
+        if (!res.ok) throw new Error(json?.error?.message || 'テーマの取得に失敗しました')
         if (!cancelled) setThemes(json?.data?.themes || [])
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'テーマ取得に失敗しました')
+        if (!cancelled) setError(e instanceof Error ? e.message : 'テーマの取得に失敗しました')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -50,7 +50,9 @@ export default function ExplorePage() {
           <div>
             <p className="font-mono text-xs tracking-[0.25em] text-student-text-tertiary">EXPLORE THEMES</p>
             <h1 className="mt-2 font-heading text-3xl font-bold text-student-text-primary">公開テーマ一覧</h1>
-            <p className="mt-2 text-sm text-student-text-tertiary">授業で扱うテーマ候補と設問数を確認できます。</p>
+            <p className="mt-2 text-sm text-student-text-tertiary">
+              授業で扱うテーマの概要と設問数を事前に確認できます。
+            </p>
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => router.push('/student')}>
@@ -73,7 +75,7 @@ export default function ExplorePage() {
         ) : themes.length === 0 ? (
           <Card>
             <CardContent>
-              <p className="text-sm text-student-text-tertiary">公開中のテーマがありません。</p>
+              <p className="text-sm text-student-text-tertiary">公開中のテーマはありません。</p>
             </CardContent>
           </Card>
         ) : (

@@ -18,7 +18,7 @@ const joinSchema = z
       .regex(/^[A-Za-z0-9_-]+$/, 'sessionCodeの形式が不正です')
       .optional(),
     studentName: z.string().trim().min(1, '表示名を入力してください').max(50, '表示名は50文字以内です').optional(),
-    passcode: z.string().trim().min(4, '参加コードは4文字以上で入力してください').max(128, '参加コードが長すぎます'),
+    passcode: z.string().trim().min(6, '参加コードは6文字以上で入力してください').max(128, '参加コードが長すぎます'),
   })
   .refine((value) => Boolean(value.sessionId || value.sessionCode), {
     message: 'sessionId または sessionCode が必要です',
@@ -57,10 +57,10 @@ export async function POST(request: NextRequest) {
     if (!ipBurstGuard.ok) return rateLimitedResponse(ipBurstGuard.retryAfterSec)
 
     if (rawSessionCode) {
-      const scopedLimit = rateLimitByIp(`join:${ip}:${rawSessionCode}`, { limit: 60, windowMs: 10 * 60 * 1000 })
+      const scopedLimit = rateLimitByIp(`join:${ip}:${rawSessionCode}`, { limit: 5, windowMs: 10 * 60 * 1000 })
       if (!scopedLimit.ok) return rateLimitedResponse(scopedLimit.retryAfterSec)
     } else if (rawSessionId) {
-      const scopedLimit = rateLimitByIp(`join:${ip}:${rawSessionId}`, { limit: 60, windowMs: 10 * 60 * 1000 })
+      const scopedLimit = rateLimitByIp(`join:${ip}:${rawSessionId}`, { limit: 5, windowMs: 10 * 60 * 1000 })
       if (!scopedLimit.ok) return rateLimitedResponse(scopedLimit.retryAfterSec)
     } else {
       const noSessionLimit = rateLimitByIp(`join:${ip}:unknown`, { limit: 5, windowMs: 10 * 60 * 1000 })
