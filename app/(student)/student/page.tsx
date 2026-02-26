@@ -1,13 +1,25 @@
 ﻿'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button, Input } from '@/components/ui'
 import { fetchWithRetry } from '@/lib/fetch-with-retry'
 import { toHalfWidth } from '@/lib/utils/normalize'
 
-export default function StudentJoinPage() {
+export default function StudentJoinPageWrapper() {
+  return (
+    <Suspense fallback={
+      <main className="matte-texture flex min-h-screen items-center justify-center">
+        <p className="text-student-text-disabled">読み込み中...</p>
+      </main>
+    }>
+      <StudentJoinPage />
+    </Suspense>
+  )
+}
+
+function StudentJoinPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [sessionCode, setSessionCode] = useState('')
