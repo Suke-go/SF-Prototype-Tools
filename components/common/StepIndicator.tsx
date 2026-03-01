@@ -17,7 +17,7 @@ type StepIndicatorProps = {
 
 export function StepIndicator({ steps, currentKey, completedKeys, onNavigate }: StepIndicatorProps) {
   return (
-    <nav aria-label="進捗ステップ" className="mb-4 overflow-x-auto">
+    <nav aria-label="進捗ステップ" className="mb-4 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
       <ol className="flex min-w-max items-center gap-1 rounded-xl border border-student-border-primary bg-student-bg-secondary px-3 py-2">
         {steps.map((step, index) => {
           const isCurrent = step.key === currentKey

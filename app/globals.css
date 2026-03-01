@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer base {
   :root {
     /* 生徒側（ダークUI） */
@@ -13,18 +19,24 @@
     --student-text-secondary: #c8c8c8;
     --student-text-tertiary: #888888;
     --student-text-disabled: #555555;
-    
+
     /* 回答ボタン — 価値判断を暗示しない中立色 (REM-C03) */
-    --student-answer-yes: #6b8299;      /* steel: hsl(210, 18%, 51%) */
-    --student-answer-no: #99806b;       /* tan:   hsl(30, 18%, 51%) */
-    --student-answer-unknown: #808080;  /* gray:  hsl(0, 0%, 50%)   */
+    --student-answer-yes: #6b8299;
+    /* steel: hsl(210, 18%, 51%) */
+    --student-answer-no: #99806b;
+    /* tan:   hsl(30, 18%, 51%) */
+    --student-answer-unknown: #808080;
+    /* gray:  hsl(0, 0%, 50%)   */
     --student-answer-yes-glow: rgba(107, 130, 153, 0.25);
     --student-answer-no-glow: rgba(153, 128, 107, 0.25);
 
     /* セマンティック用途（エラー表示等） */
-    --student-semantic-error: #b71c1c;  /* Original accent-red */
-    --student-semantic-info: #1565c0;   /* Original accent-blue */
-    --student-semantic-gray: #505050;   /* Original accent-gray */
+    --student-semantic-error: #b71c1c;
+    /* Original accent-red */
+    --student-semantic-info: #1565c0;
+    /* Original accent-blue */
+    --student-semantic-gray: #505050;
+    /* Original accent-gray */
 
     --student-border-primary: #2a2a2a;
     --student-border-secondary: #1a1a1a;
@@ -100,6 +112,7 @@
   .matte-texture {
     position: relative;
   }
+
   .matte-texture::after {
     content: '';
     position: absolute;
@@ -114,27 +127,52 @@
   .fade-in {
     animation: fadeIn 400ms ease-out;
   }
+
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   /* 浮上アニメーション */
   .float-up {
     animation: floatUp 600ms ease-out;
   }
+
   @keyframes floatUp {
-    from { opacity: 0; transform: translateY(24px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   /* 控えめなパルス */
   .pulse-once {
     animation: pulseOnce 300ms ease-out;
   }
+
   @keyframes pulseOnce {
-    0%   { transform: scale(1); }
-    50%  { transform: scale(1.05); }
-    100% { transform: scale(1); }
+    0% {
+      transform: scale(1);
+    }
+
+    50% {
+      transform: scale(1.05);
+    }
+
+    100% {
+      transform: scale(1);
+    }
   }
 }
