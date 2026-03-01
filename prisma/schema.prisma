@@ -106,6 +106,7 @@ model Theme {
   primarySessions Session[]     @relation("PrimarySessionTheme")
   sessionOptions  SessionTheme[]
   questions       Question[]
+  article         Article?
 
   @@index([status])
   @@map("themes")
@@ -129,6 +130,28 @@ model SessionTheme {
 enum ThemeStatus {
   ACTIVE
   INACTIVE
+}
+
+model Article {
+  id        String        @id @default(uuid())
+  themeId   String        @unique
+  title     String        @db.VarChar(255)
+  subtitle  String?       @db.VarChar(500)
+  category  String        @db.VarChar(255)
+  content   Json
+  status    ArticleStatus @default(DRAFT)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("articles")
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
 }
 
 model Question {
