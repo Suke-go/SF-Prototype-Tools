@@ -10,7 +10,6 @@ import { StepIndicator } from '@/components/common/StepIndicator'
 import { buildStudentSteps, completedStepKeys } from '@/lib/constants/student-flow'
 import { renderBriefingSection } from '@/components/briefing/BriefingSections'
 import { buildBriefingSections } from '@/lib/briefing/buildSections'
-import { buildArticleSections } from '@/lib/briefing/buildArticleSections'
 
 type LogMap = Record<string, { id: string; reflection: string; updatedAt: string }>
 
@@ -65,8 +64,6 @@ export default function BriefingPage({ params }: { params: { sessionId: string }
   const [logs, setLogs] = useState<LogMap>({})
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [savingKey, setSavingKey] = useState<string | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [dbArticle, setDbArticle] = useState<{ title: string; subtitle?: string; content: any } | null>(null)
   const draftsRef = useRef<Record<string, string>>({})
 
   // ── localStorage: theme selection ──
@@ -150,27 +147,6 @@ export default function BriefingPage({ params }: { params: { sessionId: string }
     }
   }, [sessionId, selectedThemeId])
 
-  // ── Fetch DB article for selected theme ──
-  useEffect(() => {
-    if (!selectedThemeId) { setDbArticle(null); return }
-    let cancelled = false
-    async function fetchArticle() {
-      try {
-        const res = await fetch(`/api/themes/${encodeURIComponent(selectedThemeId)}/article`, { cache: 'no-store' })
-        const json = await res.json()
-        if (!cancelled && json.success && json.data.article) {
-          setDbArticle(json.data.article)
-        } else if (!cancelled) {
-          setDbArticle(null)
-        }
-      } catch {
-        if (!cancelled) setDbArticle(null)
-      }
-    }
-    void fetchArticle()
-    return () => { cancelled = true }
-  }, [selectedThemeId])
-
   // ── Derived state ──
   const selectedTheme = useMemo(() => themes.find((t) => t.id === selectedThemeId) || null, [themes, selectedThemeId])
 
@@ -185,14 +161,11 @@ export default function BriefingPage({ params }: { params: { sessionId: string }
     return BEGINNER_STORIES[activeGoal.key] || DEFAULT_STORY
   }, [activeGoal])
 
-  // ── Build sections: DB article first, fallback to stories.json ──
+  // ── Build sections from data ──
   const sections = useMemo(() => {
-    if (dbArticle) {
-      return buildArticleSections(dbArticle.title, dbArticle.subtitle, dbArticle.content || {})
-    }
     if (!activeGoal) return []
     return buildBriefingSections(activeGoal, story)
-  }, [dbArticle, activeGoal, story])
+  }, [activeGoal, story])
 
   // ── Save handler ──
   function clearDraftStorage(goalKey: string) {

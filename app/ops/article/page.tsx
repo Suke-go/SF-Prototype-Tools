@@ -23,18 +23,6 @@ type ThemeOption = { id: string; title: string; _count: { questions: number } }
 const EMPTY_TECH = { name: '', oneliner: '', bodyParagraphs: ['', ''] }
 const EMPTY_SF = { title: '', author: '', body: '' }
 
-const DEFAULT_CATEGORIES = [
-    'ムーンショット目標1',
-    'ムーンショット目標2',
-    'ムーンショット目標3',
-    'ムーンショット目標4',
-    'ムーンショット目標5',
-    'ムーンショット目標6',
-    'ムーンショット目標7',
-    'ムーンショット目標8',
-    'ムーンショット目標9',
-]
-
 export default function ArticleEditorPage() {
     const [opsKey, setOpsKey] = useState('')
     const [authenticated, setAuthenticated] = useState(false)
@@ -58,17 +46,6 @@ export default function ArticleEditorPage() {
     const [subtitle, setSubtitle] = useState('')
     const [category, setCategory] = useState('')
     const [status, setStatus] = useState<'DRAFT' | 'PUBLISHED'>('DRAFT')
-
-    // Category management
-    const [customCategories, setCustomCategories] = useState<string[]>([])
-    const ALL_CATEGORIES = [...DEFAULT_CATEGORIES, ...customCategories.filter(c => !DEFAULT_CATEGORIES.includes(c))]
-
-    useEffect(() => {
-        try {
-            const saved = localStorage.getItem('ops:categories')
-            if (saved) setCustomCategories(JSON.parse(saved))
-        } catch { /* ignore */ }
-    }, [])
 
     // Content fields
     const [catchcopy, setCatchcopy] = useState('')
@@ -170,8 +147,8 @@ export default function ArticleEditorPage() {
         finally { setSaving(false) }
     }
 
+    // ---- Auto generate ----
     const STEPS = [
-        { id: 'preprocess', label: '⓪ 前処理', prompt: 'preprocess.md', desc: '元テキストを整理・要約' },
         { id: 'intro_sf', label: '① SFヴィネット', prompt: 'intro-sf-writer.md', desc: '背景情報 → 500字のSFつかみ文生成' },
         { id: 'meidai', label: '② 命題生成', prompt: 'meidai.md', desc: 'テーマ → 20問の設問をJSONで生成' },
         { id: 'meidai_review', label: '③ 命題校正', prompt: 'meidai_review.md', desc: '生成された設問を整形' },
@@ -179,50 +156,6 @@ export default function ArticleEditorPage() {
         { id: 'editor', label: '⑤ 記事校正', prompt: 'editor.md', desc: '記事本文を中高生向けに校正' },
         { id: 'full_article', label: '✨ 一括生成', prompt: 'article_generator.md', desc: '背景情報 → 全フィールドJSON一括生成' },
     ] as const
-
-    // ✨ 全自動生成: テーマIDだけで全フォームを一括生成
-    async function runAutoGenerate() {
-        if (!themeId) { setError('テーマを選択してください'); return }
-        setGenerating(true); setError(null); setSuccess(null); setStepOutput('');
-        setPipelineStep('full_article')
-        try {
-            const res = await fetch('/api/ops/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-ops-secret': opsKey },
-                body: JSON.stringify({
-                    step: 'full_article',
-                    themeId,
-                    category: category || undefined,
-                    provider,
-                    model: modelOverride.trim() || undefined,
-                }),
-            })
-            const json = await res.json()
-            if (!json.success) throw new Error(json.error?.message || '生成に失敗')
-
-            if (json.data.parsed) {
-                const g = json.data.parsed as Record<string, unknown>
-                if (g.title) setTitle(g.title as string)
-                if (g.subtitle) setSubtitle(g.subtitle as string)
-                if (g.category) setCategory(g.category as string)
-                const c = (g.content || {}) as ArticleContent
-                if (c.catchcopy) setCatchcopy(c.catchcopy)
-                if (c.vignettes) setVignettes(padArray(c.vignettes, 5))
-                if (c.problemParagraphs) setProblemParagraphs(padArray(c.problemParagraphs, 2))
-                if (c.goalParagraphs) setGoalParagraphs(padArray(c.goalParagraphs, 2))
-                if (c.techs) setTechs(padTechs(c.techs))
-                if (c.challengeParagraphs) setChallengeParagraphs(padArray(c.challengeParagraphs, 2))
-                if (c.sfIntro) setSfIntro(c.sfIntro)
-                if (c.sfReferences) setSfRefs(padSfRefs(c.sfReferences))
-                if (c.sfConnection) setSfConnection(c.sfConnection)
-                if (c.closingQuestion) setClosingQuestion(c.closingQuestion)
-                if (c.sources) setSources(c.sources)
-                setSuccess('✨ AIが全フィールドを自動生成しました！確認・編集してから保存してください。')
-            }
-            setStepOutput(json.data.output)
-        } catch (e) { setError(e instanceof Error ? e.message : '全自動生成エラー') }
-        finally { setGenerating(false) }
-    }
 
     async function runStep() {
         if (!preprocessedInput.trim()) { setError('入力テキストを入力してください'); return }
@@ -369,7 +302,7 @@ export default function ArticleEditorPage() {
                 <section className="ops-section ops-section-ai">
                     <h2 className="ops-heading">🤖 AI パイプライン</h2>
                     <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                        各ステップを個別に実行できます。「✨ 一括生成」はテーマを選ぶだけでDB情報を自動取得し全フィールドをAI生成します。
+                        各ステップを個別に実行できます。「✨ 一括生成」で背景情報から全フィールドを一度に生成することも可能です。
                     </p>
 
                     {/* Provider + Model */}
@@ -443,13 +376,10 @@ export default function ArticleEditorPage() {
                     </div>
 
                     <div className="flex gap-2 items-center flex-wrap">
-                        <button onClick={() => pipelineStep === 'full_article' && themeId ? void runAutoGenerate() : void runStep()}
-                            disabled={generating || (pipelineStep === 'full_article' ? !themeId : !preprocessedInput.trim())}
-                            className={`${generating ? 'ops-shimmer' : ''} ${pipelineStep === 'full_article' ? 'bg-gradient-to-r from-purple-500 to-emerald-500 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:shadow-lg hover:-translate-y-0.5 transition-all' : provider === 'gemini' ? 'ops-btn-primary ops-btn-gemini' : 'ops-btn-primary'}`}
-                        >{generating ? '✨ 生成中…' : pipelineStep === 'full_article'
-                            ? `✨ 一括生成 実行 (${provider === 'gemini' ? 'Gemini' : 'GPT'})${themeId ? '' : '— テーマ未選択'}`
-                            : `▶ ${STEPS.find(s => s.id === pipelineStep)?.label} 実行 (${provider === 'gemini' ? 'Gemini' : 'GPT'})`
-                            }</button>
+                        <button onClick={() => void runStep()} disabled={generating || !preprocessedInput.trim()}
+                            className={`${generating ? 'ops-shimmer' : ''} ${provider === 'gemini' ? 'ops-btn-primary ops-btn-gemini' : 'ops-btn-primary'}`}
+                        >{generating ? '✨ 生成中…（30秒ほど）' : `▶ ${STEPS.find(s => s.id === pipelineStep)?.label} 実行 (${provider === 'gemini' ? 'Gemini' : 'GPT'})`}
+                        </button>
                         {stepOutput && (
                             <button onClick={() => { setPreprocessedInput(stepOutput); setStepOutput('') }}
                                 className="ops-btn-secondary">
@@ -474,17 +404,7 @@ export default function ArticleEditorPage() {
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                             <label className={labelCls}>テーマ (紐付け先) *</label>
-                            <select value={themeId} onChange={(e) => {
-                                const id = e.target.value
-                                setThemeId(id)
-                                void loadArticle(id)
-                                // カテゴリを自動抽出
-                                const theme = themes.find(t => t.id === id)
-                                if (theme) {
-                                    const match = theme.title.match(/^(ムーンショット目標\d+)/)
-                                    if (match) setCategory(match[1])
-                                }
-                            }}
+                            <select value={themeId} onChange={(e) => { setThemeId(e.target.value); void loadArticle(e.target.value) }}
                                 className={inputCls}>
                                 <option value="">選択してください</option>
                                 {themes.map(t => <option key={t.id} value={t.id}>{t.title} ({t._count.questions}問)</option>)}
@@ -492,31 +412,7 @@ export default function ArticleEditorPage() {
                         </div>
                         <div>
                             <label className={labelCls}>カテゴリ *</label>
-                            <div className="flex gap-2">
-                                <select value={category} onChange={(e) => {
-                                    if (e.target.value === '__custom__') {
-                                        const custom = prompt('新しいカテゴリ名を入力してください:')
-                                        if (custom?.trim()) {
-                                            const updated = [...new Set([...customCategories, custom.trim()])]
-                                            setCustomCategories(updated)
-                                            localStorage.setItem('ops:categories', JSON.stringify(updated))
-                                            setCategory(custom.trim())
-                                        }
-                                    } else {
-                                        setCategory(e.target.value)
-                                    }
-                                }} className={inputCls}>
-                                    <option value="">選択してください</option>
-                                    {ALL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                                    {customCategories.filter(c => !DEFAULT_CATEGORIES.includes(c)).map(c =>
-                                        <option key={c} value={c}>📌 {c}</option>
-                                    )}
-                                    <option value="__custom__">＋ カスタム追加...</option>
-                                </select>
-                            </div>
-                            {category && !ALL_CATEGORIES.includes(category) && !customCategories.includes(category) && (
-                                <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>カスタム: {category}</p>
-                            )}
+                            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="例: ムーンショット目標1" className={inputCls} />
                         </div>
                         <div className="md:col-span-2">
                             <label className={labelCls}>記事タイトル *</label>

@@ -22,6 +22,15 @@ export default function ThemeSelectionPage({ params }: { params: { sessionId: st
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  // Group display
+  type MyGroup = {
+    id: string; name: string;
+    theme: { id: string; title: string };
+    members: { id: string; name: string | null; isMe: boolean }[];
+  }
+  const [myGroup, setMyGroup] = useState<MyGroup | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -42,6 +51,20 @@ export default function ThemeSelectionPage({ params }: { params: { sessionId: st
     void load()
     return () => { cancelled = true }
   }, [sessionId])
+
+  // Fetch my group on mount
+  useEffect(() => {
+    async function fetchGroup() {
+      try {
+        const res = await fetch(`/api/session/my-group?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
+        const json = await res.json()
+        if (json.success && json.data.group) {
+          setMyGroup(json.data.group)
+        }
+      } catch { /* ignore */ }
+    }
+    void fetchGroup()
+  }, [sessionId, submitted])
 
   function toggleTheme(themeId: string) {
     if (submitting) return
@@ -65,6 +88,7 @@ export default function ThemeSelectionPage({ params }: { params: { sessionId: st
       const json = await res.json()
       if (!json.success) throw new Error(json.error?.message || '保存に失敗しました')
       localStorage.setItem(`student:theme:${sessionId}`, selected[0])
+      setSubmitted(true)
       router.push(`/student/session/${encodeURIComponent(sessionId)}/themes/${selected[0]}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存エラー')
@@ -108,6 +132,31 @@ export default function ThemeSelectionPage({ params }: { params: { sessionId: st
           </span>
         </div>
       </div>
+
+      {/* Group display (if assigned) */}
+      {myGroup && (
+        <div className="mb-8 rounded-2xl border border-green-400/30 bg-green-500/5 p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-2xl">👥</span>
+            <div>
+              <h2 className="text-lg font-bold text-student-text-primary">{myGroup.name}</h2>
+              <p className="text-xs text-student-text-tertiary">テーマ: {myGroup.theme.title}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {myGroup.members.map(m => (
+              <span key={m.id} className={[
+                'inline-flex items-center rounded-full px-3 py-1 text-sm font-medium',
+                m.isMe
+                  ? 'bg-green-500/20 text-green-400 ring-1 ring-green-400/40'
+                  : 'bg-white/5 text-student-text-secondary',
+              ].join(' ')}>
+                {m.name || '名前なし'}{m.isMe && ' (自分)'}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-center text-sm text-red-300">
