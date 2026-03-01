@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`))
     } catch (error) {
-      console.error('SSE progress error:', error)
+      console.error('SSE progress error:', error instanceof Error ? error.message : error)
     }
   }
 

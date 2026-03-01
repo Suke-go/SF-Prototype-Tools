@@ -26,7 +26,10 @@ function loadPrompt(filename: string): string | null {
     }
 }
 
-// ---------- OpenAI ----------
+// ---------- OpenAI Chat Completions API ----------
+// Docs: https://platform.openai.com/docs/api-reference/chat/create
+// - max_tokens は廃止 → max_completion_tokens を使用
+// - デフォルトモデル: gpt-4.1-mini (2026年3月時点の推奨)
 async function callOpenAI(
     prompt: string,
     opts: { json?: boolean; maxTokens?: number; model?: string } = {}
@@ -34,23 +37,33 @@ async function callOpenAI(
     const key = process.env.OPENAI_API_KEY
     if (!key) throw new Error('OPENAI_API_KEY が未設定です')
 
+    const model = opts.model || process.env.OPENAI_MODEL || 'gpt-4.1-mini'
+
     const body: Record<string, unknown> = {
-        model: opts.model || process.env.OPENAI_MODEL || 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        model,
+        messages: [
+            { role: 'system', content: 'あなたは中高生向けの科学コミュニケーターです。指示に従い正確に応答してください。' },
+            { role: 'user', content: prompt },
+        ],
         temperature: 0.7,
-        max_tokens: opts.maxTokens || 4000,
+        max_completion_tokens: opts.maxTokens || 4000,
     }
-    if (opts.json) body.response_format = { type: 'json_object' }
+    if (opts.json) {
+        body.response_format = { type: 'json_object' }
+    }
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+        },
         body: JSON.stringify(body),
     })
     if (!res.ok) {
         const errText = await res.text()
-        console.error('OpenAI error:', errText.slice(0, 200))
-        throw new Error(`OpenAI APIエラー (${res.status})`)
+        console.error('OpenAI error:', errText.slice(0, 300))
+        throw new Error(`OpenAI APIエラー (${res.status}): ${errText.slice(0, 100)}`)
     }
     const data = await res.json()
     const content = data.choices?.[0]?.message?.content
@@ -58,7 +71,10 @@ async function callOpenAI(
     return content
 }
 
-// ---------- Gemini ----------
+// ---------- Google Gemini API ----------
+// Docs: https://ai.google.dev/api/generate-content
+// Endpoint: v1beta/models/{model}:generateContent
+// デフォルトモデル: gemini-2.5-flash (2026年3月時点の推奨)
 async function callGemini(
     prompt: string,
     opts: { json?: boolean; maxTokens?: number; model?: string } = {}
@@ -66,16 +82,28 @@ async function callGemini(
     const key = process.env.GEMINI_API_KEY
     if (!key) throw new Error('GEMINI_API_KEY が未設定です')
 
-    const model = opts.model || process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+    const model = opts.model || process.env.GEMINI_MODEL || 'gemini-2.5-flash'
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`
 
-    const body: Record<string, unknown> = {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: opts.maxTokens || 4000,
-            ...(opts.json ? { responseMimeType: 'application/json' } : {}),
+    const generationConfig: Record<string, unknown> = {
+        temperature: 0.7,
+        maxOutputTokens: opts.maxTokens || 4000,
+    }
+    if (opts.json) {
+        generationConfig.responseMimeType = 'application/json'
+    }
+
+    const body = {
+        contents: [
+            {
+                role: 'user',
+                parts: [{ text: prompt }],
+            },
+        ],
+        systemInstruction: {
+            parts: [{ text: 'あなたは中高生向けの科学コミュニケーターです。指示に従い正確に応答してください。' }],
         },
+        generationConfig,
     }
 
     const res = await fetch(url, {
@@ -85,8 +113,8 @@ async function callGemini(
     })
     if (!res.ok) {
         const errText = await res.text()
-        console.error('Gemini error:', errText.slice(0, 200))
-        throw new Error(`Gemini APIエラー (${res.status})`)
+        console.error('Gemini error:', errText.slice(0, 300))
+        throw new Error(`Gemini APIエラー (${res.status}): ${errText.slice(0, 100)}`)
     }
     const data = await res.json()
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text
@@ -104,7 +132,7 @@ const STEP_CONFIG: Record<string, { file: string; json: boolean; maxTokens: numb
     full_article: { file: 'article_generator.md', json: true, maxTokens: 6000 },
 }
 
-// プレースホルダー一覧（すべて同じ input で置換）
+// プレースホルダー一覧
 const PLACEHOLDERS = [
     '{ここにムーンショット計画の本文テキストを貼る}',
     '{ここに研究目標の概要を入れる}',
@@ -116,7 +144,7 @@ const PLACEHOLDERS = [
     '{preprocessed_content}',
 ]
 
-// ---------- POST ----------
+// ---------- POST: 生成実行 ----------
 export async function POST(request: NextRequest) {
     if (!verifyOpsSecret(request)) {
         return NextResponse.json(
@@ -127,12 +155,13 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json()
-        const { step, input, category, provider, customPrompt } = body as {
+        const { step, input, category, provider, customPrompt, model } = body as {
             step: string
             input: string
             category?: string
-            provider?: 'openai' | 'gemini'   // デフォルト: openai
-            customPrompt?: string             // UI でプロンプトを編集した場合
+            provider?: 'openai' | 'gemini'
+            customPrompt?: string
+            model?: string                    // UI からモデル名を直接指定
         }
 
         if (!step || !input?.trim()) {
@@ -142,7 +171,6 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // ステップの設定を取得
         const config = STEP_CONFIG[step]
         if (!config) {
             return NextResponse.json(
@@ -151,7 +179,7 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // プロンプト構築: customPrompt があればそれを使う（プロンプト編集機能）
+        // プロンプト構築
         let fullPrompt: string
         if (customPrompt?.trim()) {
             fullPrompt = customPrompt
@@ -163,12 +191,10 @@ export async function POST(request: NextRequest) {
                     { status: 500 }
                 )
             }
-            // プレースホルダー置換
             fullPrompt = promptTemplate
             for (const ph of PLACEHOLDERS) {
                 fullPrompt = fullPrompt.replace(ph, input)
             }
-            // カテゴリ置換（JSONインジェクション対策）
             if (category) {
                 const safe = category.replace(/[\\"/\n\r\t]/g, '')
                 fullPrompt = fullPrompt.replace('"category": "カテゴリ名"', `"category": "${safe}"`)
@@ -176,13 +202,13 @@ export async function POST(request: NextRequest) {
         }
 
         // LLM 呼び出し
-        const callOpts = { json: config.json, maxTokens: config.maxTokens }
+        const callOpts = { json: config.json, maxTokens: config.maxTokens, model: model || undefined }
         const selectedProvider = provider || 'openai'
         const raw = selectedProvider === 'gemini'
             ? await callGemini(fullPrompt, callOpts)
             : await callOpenAI(fullPrompt, callOpts)
 
-        // JSON出力のパース試行
+        // JSON パース試行
         let parsed: unknown = null
         if (config.json) {
             try { parsed = JSON.parse(raw) } catch {
@@ -200,7 +226,7 @@ export async function POST(request: NextRequest) {
                 provider: selectedProvider,
                 output: raw,
                 parsed: parsed || undefined,
-                promptUsed: fullPrompt,  // フロントでプロンプト確認用
+                promptUsed: fullPrompt,
             },
         })
     } catch (error) {
@@ -218,7 +244,7 @@ export async function POST(request: NextRequest) {
     }
 }
 
-// ---------- GET: プロンプトテンプレートを取得 ----------
+// ---------- GET: プロンプトテンプレート取得 ----------
 export async function GET(request: NextRequest) {
     if (!verifyOpsSecret(request)) {
         return NextResponse.json(

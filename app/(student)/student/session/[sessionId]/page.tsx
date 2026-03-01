@@ -61,7 +61,7 @@ export default function StudentSessionPage({ params }: { params: { sessionId: st
   }, [router, sessionId])
 
   async function joinFromSessionPage() {
-    if (passcode.trim().length < 4) return
+    if (passcode.trim().length < 6) return
     setError(null)
     setJoining(true)
     try {
@@ -119,13 +119,11 @@ export default function StudentSessionPage({ params }: { params: { sessionId: st
               type="password"
               value={passcode}
               onChange={(event) => setPasscode(event.target.value)}
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="数字4桁以上の参加コード"
+              placeholder="6文字以上の参加コード"
               className="text-center font-mono"
               onKeyDown={(event) => event.key === 'Enter' && joinFromSessionPage()}
             />
-            <Button onClick={() => void joinFromSessionPage()} disabled={joining || passcode.trim().length < 4} className="w-full">
+            <Button onClick={() => void joinFromSessionPage()} disabled={joining || passcode.trim().length < 6} className="w-full">
               {joining ? '参加中...' : 'このセッションに参加'}
             </Button>
             <Button variant="secondary" onClick={() => router.push('/student')} className="w-full">

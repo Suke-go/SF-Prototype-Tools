@@ -195,7 +195,7 @@ export async function GET(request: NextRequest) {
     }
     const zodRes = zodErrorResponse(error)
     if (zodRes) return zodRes
-    console.error('Survey summary fetch error:', error)
+    console.error('Survey summary fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'アンケート集計の取得に失敗しました' } },
       { status: 500 }

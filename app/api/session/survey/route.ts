@@ -113,13 +113,13 @@ export async function GET(request: NextRequest) {
         preConsentToResearch: preResponse?.consentToResearch ?? null,
         response: response
           ? {
-              id: response.id,
-              phase: response.phase,
-              consentToResearch: response.consentToResearch,
-              consentToQuote: response.consentToQuote,
-              answers: safeSurveyAnswers(response.answers),
-              updatedAt: response.updatedAt.toISOString(),
-            }
+            id: response.id,
+            phase: response.phase,
+            consentToResearch: response.consentToResearch,
+            consentToQuote: response.consentToQuote,
+            answers: safeSurveyAnswers(response.answers),
+            updatedAt: response.updatedAt.toISOString(),
+          }
           : null,
       },
     })
@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
     }
     const zodRes = zodErrorResponse(error)
     if (zodRes) return zodRes
-    console.error('Survey fetch error:', error)
+    console.error('Survey fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'アンケートの取得に失敗しました' } },
       { status: 500 }
@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
     }
     const zodRes = zodErrorResponse(error)
     if (zodRes) return zodRes
-    console.error('Survey save error:', error)
+    console.error('Survey save error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'アンケート保存に失敗しました' } },
       { status: 500 }

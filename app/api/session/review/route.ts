@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
-    console.error('Review fetch error:', error)
+    console.error('Review fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'レビュー一覧取得に失敗しました' } },
       { status: 500 }

@@ -56,7 +56,7 @@ export const loginSchema = z
   .object({
     sessionId: z.string().uuid('sessionIdの形式が不正です').optional(),
     sessionCode: sessionCodeSchema.optional(),
-    passcode: z.string().trim().min(4, '参加コードは4文字以上で入力してください').max(128, '参加コードは128文字以内で入力してください'),
+    passcode: z.string().trim().min(6, '参加コードは6文字以上で入力してください').max(128, '参加コードは128文字以内で入力してください'),
   })
   .refine((value) => Boolean(value.sessionId || value.sessionCode), {
     message: 'sessionId または sessionCode のどちらかを入力してください',

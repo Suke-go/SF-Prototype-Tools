@@ -1,9 +1,17 @@
 ﻿'use client'
 
-import { useEffect, useRef } from 'react'
+import { Suspense, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function QuestionsCompletePage({ params }: { params: { sessionId: string } }) {
+export default function QuestionsCompletePageWrapper({ params }: { params: { sessionId: string } }) {
+  return (
+    <Suspense fallback={<main style={{ background: '#0a0a0a', minHeight: '100vh' }} />}>
+      <QuestionsCompletePage params={params} />
+    </Suspense>
+  )
+}
+
+function QuestionsCompletePage({ params }: { params: { sessionId: string } }) {
   const sessionId = params.sessionId
   const router = useRouter()
   const searchParams = useSearchParams()

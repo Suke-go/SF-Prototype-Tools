@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
-    console.error('Learning log fetch error:', error)
+    console.error('Learning log fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: '学習ログ取得に失敗しました' } },
       { status: 500 }

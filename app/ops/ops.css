@@ -1,0 +1,315 @@
+/* ============================================================
+   OPS Article Editor — Premium Dark CMS Theme
+   ============================================================ */
+
+/* --- Page background --- */
+.ops-page {
+  min-height: 100vh;
+  background: linear-gradient(145deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+  color: #e2e8f0;
+  font-family: 'Inter', 'Helvetica Neue', sans-serif;
+}
+
+/* --- Glass card sections --- */
+.ops-section {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1.25rem;
+  backdrop-filter: blur(12px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.ops-section:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* AI pipeline section — accent glow */
+.ops-section-ai {
+  background: rgba(124, 58, 237, 0.06);
+  border-color: rgba(124, 58, 237, 0.18);
+}
+.ops-section-ai:hover {
+  border-color: rgba(124, 58, 237, 0.30);
+  box-shadow: 0 0 24px rgba(124, 58, 237, 0.08);
+}
+
+/* --- Input fields --- */
+.ops-input {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.ops-input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+.ops-input:focus {
+  outline: none;
+  border-color: rgba(124, 58, 237, 0.5);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+  background: rgba(255, 255, 255, 0.07);
+}
+.ops-input:hover:not(:focus) {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Select dropdown */
+.ops-input option {
+  background: #1a1a2e;
+  color: #e2e8f0;
+}
+
+/* --- Labels --- */
+.ops-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* --- Buttons --- */
+.ops-btn-primary {
+  border-radius: 8px;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ops-btn-primary:hover {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
+  transform: translateY(-1px);
+}
+.ops-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.ops-btn-gemini {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+.ops-btn-gemini:hover {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
+}
+
+.ops-btn-secondary {
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ops-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.ops-btn-save {
+  flex: 1;
+  border-radius: 8px;
+  padding: 0.625rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #059669, #047857);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ops-btn-save:hover {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.3);
+}
+.ops-btn-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- Provider toggle --- */
+.ops-toggle-group {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.ops-toggle-btn {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ops-toggle-btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.05);
+}
+.ops-toggle-btn.active-openai {
+  background: rgba(124, 58, 237, 0.25);
+  color: #c4b5fd;
+}
+.ops-toggle-btn.active-gemini {
+  background: rgba(37, 99, 235, 0.25);
+  color: #93c5fd;
+}
+
+/* --- Step pills --- */
+.ops-step-pill {
+  border-radius: 9999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ops-step-pill:hover {
+  border-color: rgba(124, 58, 237, 0.3);
+  color: rgba(255, 255, 255, 0.7);
+}
+.ops-step-pill.active {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: rgba(124, 58, 237, 0.4);
+  color: #c4b5fd;
+}
+
+/* --- Alerts --- */
+.ops-alert-error {
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+.ops-alert-success {
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+/* --- Section headers --- */
+.ops-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 0.75rem;
+}
+
+/* --- Save bar --- */
+.ops-save-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1rem;
+  position: sticky;
+  bottom: 1rem;
+  backdrop-filter: blur(16px);
+}
+
+/* --- Prompt editor states --- */
+.ops-input-edited {
+  border-color: rgba(251, 146, 60, 0.5) !important;
+  background: rgba(251, 146, 60, 0.06) !important;
+}
+
+/* --- Nested card (tech items, SF refs) --- */
+.ops-nested-card {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+/* --- Login card --- */
+.ops-login-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 2rem;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.ops-login-btn {
+  width: 100%;
+  border-radius: 8px;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.ops-login-btn:hover {
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
+}
+
+/* --- Page title --- */
+.ops-page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #c4b5fd, #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* --- Subtle shimmer for generating state --- */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.ops-shimmer {
+  background: linear-gradient(90deg,
+    rgba(124, 58, 237, 0.3) 0%,
+    rgba(139, 92, 246, 0.5) 50%,
+    rgba(124, 58, 237, 0.3) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* --- Link style --- */
+.ops-link {
+  font-size: 0.875rem;
+  color: rgba(196, 181, 253, 0.7);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.ops-link:hover {
+  color: #c4b5fd;
+  text-decoration: underline;
+}

@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Themes fetch error:', error)
+    console.error('Themes fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
       { status: 500 }
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') return unauthorized()
     const zodRes = zodErrorResponse(error)
     if (zodRes) return zodRes
-    console.error('Theme create error:', error)
+    console.error('Theme create error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'テーマ作成に失敗しました' } },
       { status: 500 }

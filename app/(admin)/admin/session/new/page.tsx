@@ -106,9 +106,10 @@ export default function AdminNewSessionPage() {
         throw new Error(issueMessages || json?.error?.message || 'セッション作成に失敗しました')
       }
 
-      const created = json.data.session as { id: string }
+      const created = json.data.session as { id: string; sessionCode: string }
       localStorage.setItem('admin:lastSessionId', created.id)
-      router.push(`/admin/board?sessionId=${created.id}`)
+      localStorage.setItem('admin:lastSessionCode', created.sessionCode || sessionCode.trim().toUpperCase())
+      router.push(`/admin/board?sessionId=${created.id}&created=1`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'セッション作成に失敗しました')
     } finally {

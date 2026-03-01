@@ -74,37 +74,37 @@ export async function GET(request: NextRequest) {
     const bigFiveAvg =
       bfStudents.length > 0
         ? {
-            extraversion:
-              Math.round(
-                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.extraversion ?? 0), 0) /
-                  bfStudents.length) *
-                  10
-              ) / 10,
-            agreeableness:
-              Math.round(
-                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.agreeableness ?? 0), 0) /
-                  bfStudents.length) *
-                  10
-              ) / 10,
-            conscientiousness:
-              Math.round(
-                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.conscientiousness ?? 0), 0) /
-                  bfStudents.length) *
-                  10
-              ) / 10,
-            neuroticism:
-              Math.round(
-                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.neuroticism ?? 0), 0) /
-                  bfStudents.length) *
-                  10
-              ) / 10,
-            openness:
-              Math.round(
-                (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.openness ?? 0), 0) /
-                  bfStudents.length) *
-                  10
-              ) / 10,
-          }
+          extraversion:
+            Math.round(
+              (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.extraversion ?? 0), 0) /
+                bfStudents.length) *
+              10
+            ) / 10,
+          agreeableness:
+            Math.round(
+              (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.agreeableness ?? 0), 0) /
+                bfStudents.length) *
+              10
+            ) / 10,
+          conscientiousness:
+            Math.round(
+              (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.conscientiousness ?? 0), 0) /
+                bfStudents.length) *
+              10
+            ) / 10,
+          neuroticism:
+            Math.round(
+              (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.neuroticism ?? 0), 0) /
+                bfStudents.length) *
+              10
+            ) / 10,
+          openness:
+            Math.round(
+              (bfStudents.reduce((sum, student) => sum + (student.bigFiveResult?.openness ?? 0), 0) /
+                bfStudents.length) *
+              10
+            ) / 10,
+        }
         : null
 
     return NextResponse.json({
@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
-    console.error('Session students fetch error:', error)
+    console.error('Session students fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: '学生情報の取得に失敗しました' } },
       { status: 500 }

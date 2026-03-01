@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
-    console.error('Teacher me error:', error)
+    console.error('Teacher me error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'ユーザー情報の取得に失敗しました' } },
       { status: 500 }

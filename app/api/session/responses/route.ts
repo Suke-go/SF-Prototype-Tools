@@ -90,13 +90,13 @@ export async function GET(request: NextRequest) {
     const responses =
       questionIds.length > 0
         ? await prisma.studentResponse.findMany({
-            where: { sessionId, questionId: { in: questionIds } },
-            select: {
-              studentId: true,
-              questionId: true,
-              responseValue: true,
-            },
-          })
+          where: { sessionId, questionId: { in: questionIds } },
+          select: {
+            studentId: true,
+            questionId: true,
+            responseValue: true,
+          },
+        })
         : []
 
     const isTeacher = auth.role === 'teacher'
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
     for (let i = shuffledIndices.length - 1; i > 0; i--) {
       seed = (seed * 1103515245 + 12345) | 0
       const j = ((seed >>> 16) & 0x7fff) % (i + 1)
-      ;[shuffledIndices[i], shuffledIndices[j]] = [shuffledIndices[j], shuffledIndices[i]]
+        ;[shuffledIndices[i], shuffledIndices[j]] = [shuffledIndices[j], shuffledIndices[i]]
     }
     students.forEach((student, index) => {
       const anonIndex = shuffledIndices[index]
@@ -180,32 +180,32 @@ export async function GET(request: NextRequest) {
     const surveyStatus =
       auth.role === 'student' && auth.studentId
         ? await (async () => {
-            const [preSurvey, postSurvey] = await Promise.all([
-              prisma.sessionSurveyResponse.findUnique({
-                where: {
-                  studentId_phase: {
-                    studentId: auth.studentId!,
-                    phase: 'PRE',
-                  },
+          const [preSurvey, postSurvey] = await Promise.all([
+            prisma.sessionSurveyResponse.findUnique({
+              where: {
+                studentId_phase: {
+                  studentId: auth.studentId!,
+                  phase: 'PRE',
                 },
-                select: { id: true, consentToResearch: true },
-              }),
-              prisma.sessionSurveyResponse.findUnique({
-                where: {
-                  studentId_phase: {
-                    studentId: auth.studentId!,
-                    phase: 'POST',
-                  },
+              },
+              select: { id: true, consentToResearch: true },
+            }),
+            prisma.sessionSurveyResponse.findUnique({
+              where: {
+                studentId_phase: {
+                  studentId: auth.studentId!,
+                  phase: 'POST',
                 },
-                select: { id: true },
-              }),
-            ])
-            return {
-              preCompleted: Boolean(preSurvey),
-              postCompleted: Boolean(postSurvey),
-              consentToResearch: preSurvey?.consentToResearch ?? null,
-            }
-          })()
+              },
+              select: { id: true },
+            }),
+          ])
+          return {
+            preCompleted: Boolean(preSurvey),
+            postCompleted: Boolean(postSurvey),
+            consentToResearch: preSurvey?.consentToResearch ?? null,
+          }
+        })()
         : null
 
     return NextResponse.json({
@@ -242,7 +242,7 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
-    console.error('Session responses fetch error:', error)
+    console.error('Session responses fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: '回答データの取得に失敗しました' } },
       { status: 500 }

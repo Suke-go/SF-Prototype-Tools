@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import '../ops.css'
 
 type ArticleContent = {
     catchcopy?: string
@@ -37,6 +38,7 @@ export default function ArticleEditorPage() {
     const [showPrompt, setShowPrompt] = useState(false)
     const [promptText, setPromptText] = useState('')
     const [promptEdited, setPromptEdited] = useState(false)
+    const [modelOverride, setModelOverride] = useState('')
 
     // Article fields
     const [themeId, setThemeId] = useState('')
@@ -167,6 +169,7 @@ export default function ArticleEditorPage() {
                     input: preprocessedInput,
                     category: category || undefined,
                     provider,
+                    model: modelOverride.trim() || undefined,
                     customPrompt: promptEdited ? promptText : undefined,
                 }),
             })
@@ -241,63 +244,63 @@ export default function ArticleEditorPage() {
         setter(prev => { const n = [...prev]; n[i] = v; return n })
     }
 
-    const inputCls = 'w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400'
-    const labelCls = 'block text-xs font-medium text-gray-500 mb-1'
-    const sectionCls = 'rounded-lg border border-gray-200 bg-white p-5 shadow-sm'
+    const inputCls = 'ops-input'
+    const labelCls = 'ops-label'
+    const sectionCls = 'ops-section'
 
     // Login screen
     if (!authenticated) {
         return (
-            <main className="mx-auto max-w-md p-8">
-                <div className={sectionCls}>
-                    <h1 className="text-xl font-bold text-gray-900 mb-4">📝 記事エディタ</h1>
-                    {error && <p className="mb-3 text-sm text-red-600 bg-red-50 p-2 rounded">{error}</p>}
+            <main className="ops-page flex items-center justify-center">
+                <div className="ops-login-card w-full max-w-md">
+                    <h1 className="ops-page-title text-xl mb-6">📝 記事エディタ</h1>
+                    {error && <p className="ops-alert-error mb-3">{error}</p>}
                     <input type="password" value={opsKey} onChange={(e) => setOpsKey(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                         className={`${inputCls} mb-3`} placeholder="運用キー (OPS_SECRET)" />
-                    <button onClick={handleLogin} className="w-full rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">ログイン</button>
+                    <button onClick={handleLogin} className="ops-login-btn">ログイン</button>
                 </div>
             </main>
         )
     }
 
     return (
-        <main className="mx-auto max-w-4xl p-4 md:p-8">
+        <main className="ops-page mx-auto max-w-4xl p-4 md:p-8">
             <div className="mb-6 flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-gray-900">📝 記事エディタ</h1>
-                <div className="flex gap-2">
-                    <a href={`/ops?key=${encodeURIComponent(opsKey)}`} className="text-sm text-blue-600 hover:underline">← 運用管理に戻る</a>
-                </div>
+                <h1 className="ops-page-title">📝 記事エディタ</h1>
+                <a href={`/ops?key=${encodeURIComponent(opsKey)}`} className="ops-link">← 運用管理に戻る</a>
             </div>
 
-            {error && <div className="mb-4 rounded bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
-            {success && <div className="mb-4 rounded bg-green-50 border border-green-200 p-3 text-sm text-green-700">{success}</div>}
+            {error && <div className="ops-alert-error mb-4">{error}</div>}
+            {success && <div className="ops-alert-success mb-4">{success}</div>}
 
             <div className="space-y-6">
 
                 {/* ===== AI PIPELINE ===== */}
-                <section className={`${sectionCls} border-purple-200 bg-purple-50`}>
-                    <h2 className="text-base font-semibold text-purple-800 mb-1">🤖 AI パイプライン</h2>
-                    <p className="text-xs text-purple-500 mb-3">
+                <section className="ops-section ops-section-ai">
+                    <h2 className="ops-heading">🤖 AI パイプライン</h2>
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
                         各ステップを個別に実行できます。「✨ 一括生成」で背景情報から全フィールドを一度に生成することも可能です。
                     </p>
 
-                    {/* Provider toggle */}
-                    <div className="flex items-center gap-3 mb-3">
-                        <div className="flex rounded-lg border border-purple-300 overflow-hidden">
-                            <button type="button" onClick={() => setProvider('openai')}
-                                className={`px-3 py-1.5 text-xs font-medium transition-colors ${provider === 'openai' ? 'bg-purple-600 text-white' : 'bg-white text-purple-700 hover:bg-purple-50'
-                                    }`}>
-                                GPT-4o
+                    {/* Provider + Model */}
+                    <div className="flex items-center gap-3 mb-3 flex-wrap">
+                        <div className="ops-toggle-group">
+                            <button type="button" onClick={() => { setProvider('openai'); setModelOverride('') }}
+                                className={`ops-toggle-btn ${provider === 'openai' ? 'active-openai' : ''}`}>
+                                OpenAI
                             </button>
-                            <button type="button" onClick={() => setProvider('gemini')}
-                                className={`px-3 py-1.5 text-xs font-medium transition-colors ${provider === 'gemini' ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 hover:bg-blue-50'
-                                    }`}>
+                            <button type="button" onClick={() => { setProvider('gemini'); setModelOverride('') }}
+                                className={`ops-toggle-btn ${provider === 'gemini' ? 'active-gemini' : ''}`}>
                                 Gemini
                             </button>
                         </div>
-                        <span className="text-xs text-gray-400">
-                            {provider === 'openai' ? 'OpenAI GPT-4o' : 'Google Gemini 2.0 Flash'}
+                        <input value={modelOverride}
+                            onChange={(e) => setModelOverride(e.target.value)}
+                            placeholder={provider === 'openai' ? 'gpt-4.1-mini' : 'gemini-2.5-flash'}
+                            className="ops-input font-mono" style={{ width: '10rem' }} />
+                        <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                            {modelOverride.trim() || (provider === 'openai' ? 'gpt-4.1-mini' : 'gemini-2.5-flash')}
                         </span>
                     </div>
 
@@ -305,17 +308,14 @@ export default function ArticleEditorPage() {
                     <div className="flex flex-wrap gap-1.5 mb-3">
                         {STEPS.map((s) => (
                             <button key={s.id} type="button" onClick={() => { setPipelineStep(s.id); setShowPrompt(false); setPromptEdited(false) }}
-                                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${pipelineStep === s.id
-                                        ? 'bg-purple-600 text-white'
-                                        : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-100'
-                                    }`}>
+                                className={`ops-step-pill ${pipelineStep === s.id ? 'active' : ''}`}>
                                 {s.label}
                             </button>
                         ))}
                     </div>
-                    <p className="text-xs text-gray-500 mb-2">
+                    <p className="text-xs mb-2" style={{ color: 'rgba(255,255,255,0.35)' }}>
                         {STEPS.find(s => s.id === pipelineStep)?.desc}
-                        <span className="ml-2 text-gray-400">(プロンプト: {STEPS.find(s => s.id === pipelineStep)?.prompt})</span>
+                        <span className="ml-2" style={{ color: 'rgba(255,255,255,0.2)' }}>(プロンプト: {STEPS.find(s => s.id === pipelineStep)?.prompt})</span>
                     </p>
 
                     {/* Input */}
@@ -335,13 +335,13 @@ export default function ArticleEditorPage() {
                             } catch { /* ignore */ }
                             setShowPrompt(true)
                         }}
-                            className="text-xs text-purple-600 hover:underline mb-1">
+                            className="text-xs hover:underline mb-1" style={{ color: 'rgba(196,181,253,0.7)' }}>
                             {showPrompt ? '▲ プロンプトを隠す' : '📄 プロンプトを表示・編集'}
                         </button>
                         {showPrompt && (
                             <div>
                                 <textarea value={promptText} onChange={(e) => { setPromptText(e.target.value); setPromptEdited(true) }}
-                                    rows={12} className={`${inputCls} font-mono text-xs ${promptEdited ? 'border-orange-400 bg-orange-50' : 'bg-white'}`} />
+                                    rows={12} className={`${inputCls} font-mono text-xs ${promptEdited ? 'ops-input-edited' : ''}`} />
                                 {promptEdited && (
                                     <p className="mt-1 text-xs text-orange-600">
                                         ⚠ プロンプトが編集されています。実行時に編集後のプロンプトが使われます。
@@ -355,13 +355,12 @@ export default function ArticleEditorPage() {
 
                     <div className="flex gap-2 items-center flex-wrap">
                         <button onClick={() => void runStep()} disabled={generating || !preprocessedInput.trim()}
-                            className={`rounded px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${provider === 'gemini' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'
-                                }`}>
-                            {generating ? '✨ 生成中…（30秒ほど）' : `▶ ${STEPS.find(s => s.id === pipelineStep)?.label} 実行 (${provider === 'gemini' ? 'Gemini' : 'GPT'})`}
+                            className={`${generating ? 'ops-shimmer' : ''} ${provider === 'gemini' ? 'ops-btn-primary ops-btn-gemini' : 'ops-btn-primary'}`}
+                        >{generating ? '✨ 生成中…（30秒ほど）' : `▶ ${STEPS.find(s => s.id === pipelineStep)?.label} 実行 (${provider === 'gemini' ? 'Gemini' : 'GPT'})`}
                         </button>
                         {stepOutput && (
                             <button onClick={() => { setPreprocessedInput(stepOutput); setStepOutput('') }}
-                                className="rounded border border-purple-300 bg-white px-3 py-2 text-xs text-purple-700 hover:bg-purple-50">
+                                className="ops-btn-secondary">
                                 ⬇ 出力→入力にコピー（次のステップ用）
                             </button>
                         )}
@@ -379,7 +378,7 @@ export default function ArticleEditorPage() {
 
                 {/* ===== HEADER ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-3">📋 基本情報</h2>
+                    <h2 className="ops-heading">📋 基本情報</h2>
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                             <label className={labelCls}>テーマ (紐付け先) *</label>
@@ -536,14 +535,14 @@ export default function ArticleEditorPage() {
                 </section>
 
                 {/* ===== SAVE ===== */}
-                <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sticky bottom-4">
+                <div className="ops-save-bar">
                     <select value={status} onChange={(e) => setStatus(e.target.value as 'DRAFT' | 'PUBLISHED')}
-                        className="rounded border border-gray-300 px-3 py-2 text-sm">
+                        className="ops-input" style={{ width: 'auto' }}>
                         <option value="DRAFT">下書き</option>
                         <option value="PUBLISHED">公開</option>
                     </select>
                     <button onClick={() => void save()} disabled={saving || !themeId || !title.trim() || !category.trim()}
-                        className="flex-1 rounded bg-blue-600 px-6 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                        className="ops-btn-save">
                         {saving ? '保存中...' : '💾 記事を保存'}
                     </button>
                 </div>

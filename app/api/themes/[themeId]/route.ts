@@ -112,7 +112,7 @@ export async function GET(request: NextRequest, { params }: { params: { themeId:
       },
     })
   } catch (error) {
-    console.error('Theme detail fetch error:', error)
+    console.error('Theme detail fetch error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'サーバーエラーが発生しました' } },
       { status: 500 }
@@ -182,7 +182,7 @@ export async function PUT(request: NextRequest, { params }: { params: { themeId:
     if (error instanceof Error && error.message === 'UNAUTHORIZED') return unauthorized()
     const zodRes = zodErrorResponse(error)
     if (zodRes) return zodRes
-    console.error('Theme update error:', error)
+    console.error('Theme update error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'テーマ更新に失敗しました' } },
       { status: 500 }
@@ -250,7 +250,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { theme
     })
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') return unauthorized()
-    console.error('Theme delete error:', error)
+    console.error('Theme delete error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'テーマ削除に失敗しました' } },
       { status: 500 }

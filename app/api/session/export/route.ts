@@ -194,12 +194,12 @@ export async function GET(request: NextRequest) {
           },
           bigFive: student.bigFiveResult
             ? {
-                extraversion: student.bigFiveResult.extraversion,
-                agreeableness: student.bigFiveResult.agreeableness,
-                conscientiousness: student.bigFiveResult.conscientiousness,
-                neuroticism: student.bigFiveResult.neuroticism,
-                openness: student.bigFiveResult.openness,
-              }
+              extraversion: student.bigFiveResult.extraversion,
+              agreeableness: student.bigFiveResult.agreeableness,
+              conscientiousness: student.bigFiveResult.conscientiousness,
+              neuroticism: student.bigFiveResult.neuroticism,
+              openness: student.bigFiveResult.openness,
+            }
             : null,
           responses: student.responses.map((response) => ({
             questionId: response.questionId,
@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
-    console.error('Export error:', error)
+    console.error('Export error:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: 'エクスポートに失敗しました' } },
       { status: 500 }

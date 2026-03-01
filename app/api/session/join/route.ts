@@ -103,6 +103,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // --- 既存の Student レコードを再利用（重複防止）---
+    const displayName = input.studentName?.trim() || null
+
+    // 1. Cookie トークンで同一生徒を特定
+    let existingStudent: { id: string } | null = null
     const existingToken = request.cookies.get('studentToken')?.value
     if (existingToken) {
       try {
@@ -113,21 +118,45 @@ export async function POST(request: NextRequest) {
           payload.sessionId === session.id &&
           payload.schoolId === session.schoolId
         ) {
-          return NextResponse.json({
-            success: true,
-            data: {
-              studentId: payload.studentId,
-              sessionId: session.id,
-              sessionCode: session.sessionCode,
-              reused: true,
-            },
-          })
+          existingStudent = { id: payload.studentId }
         }
       } catch {
-        // Ignore invalid/expired token and continue with fresh join.
+        // トークン無効/期限切れ → 名前でフォールバック検索
       }
     }
 
+    // 2. トークンで見つからなかった場合、同じセッション+同じ名前で検索
+    if (!existingStudent && displayName) {
+      existingStudent = await prisma.student.findFirst({
+        where: {
+          sessionId: session.id,
+          name: displayName,
+        },
+        select: { id: true },
+      })
+    }
+
+    // 3. 既存生徒が見つかった → 再利用（新規作成しない）
+    if (existingStudent) {
+      const studentToken = generateAccessToken(
+        { role: 'student', schoolId: session.schoolId, sessionId: session.id, studentId: existingStudent.id },
+        '24h'
+      )
+      const response = NextResponse.json({
+        success: true,
+        data: {
+          studentId: existingStudent.id,
+          sessionId: session.id,
+          sessionCode: session.sessionCode,
+          reused: true,
+        },
+      })
+      clearTeacherAuthCookies(response)
+      setStudentAuthCookie(response, studentToken)
+      return response
+    }
+
+    // 4. 新規参加 → 定員チェック
     const currentParticipants = await prisma.student.count({
       where: { sessionId: session.id },
     })
@@ -138,16 +167,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 5. 新規 Student 作成
     const studentId = crypto.randomUUID()
     await prisma.student.create({
       data: {
         id: studentId,
         sessionId: session.id,
         schoolId: session.schoolId,
-        name: input.studentName || null,
+        name: displayName,
         progressStatus: 'BIG_FIVE',
       },
     })
+
+    // 6. セッションが PREPARING なら自動的に ACTIVE に変更
+    if (session.status === 'PREPARING') {
+      await prisma.session.update({
+        where: { id: session.id },
+        data: { status: 'ACTIVE' },
+      })
+    }
 
     const studentToken = generateAccessToken(
       { role: 'student', schoolId: session.schoolId, sessionId: session.id, studentId },

@@ -10,7 +10,7 @@ export function setTeacherAuthCookies(response: NextResponse, accessToken: strin
     secure: secureCookie(),
     sameSite: 'lax',
     path: '/',
-    maxAge: 15 * 60,
+    maxAge: 2 * 60 * 60, // 2時間（JWTのexpiresInと合わせる）
   })
   response.cookies.set('teacherRefreshToken', refreshToken, {
     httpOnly: true,

@@ -119,13 +119,11 @@ function StudentJoinPage() {
           <div className="relative">
             <Input
               label="参加コード"
-              helperText="数字4桁以上のコードを入力してください"
+              helperText="6文字以上のコードを入力してください"
               value={passcode}
               onChange={(event) => setPasscode(event.target.value)}
               type={showPasscode ? 'text' : 'password'}
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="例: 2468"
+              placeholder="6桁以上のコード"
               className="text-center font-mono text-base tracking-wider pr-12"
               onKeyDown={(event) => event.key === 'Enter' && onJoin()}
             />

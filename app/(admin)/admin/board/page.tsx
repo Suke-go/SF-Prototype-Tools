@@ -1,7 +1,7 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, LoadingSpinner } from '@/components/ui'
 import { fetchWithRetry } from '@/lib/fetch-with-retry'
 import { getSessionStatusLabel } from '@/lib/constants/session-status'
@@ -15,8 +15,17 @@ type SessionSummary = {
   createdAt: string
 }
 
-export default function AdminBoardPage() {
+export default function AdminBoardPageWrapper() {
+  return (
+    <Suspense fallback={<main className="mx-auto max-w-7xl p-8 text-admin-text-primary">読み込み中...</main>}>
+      <AdminBoardPage />
+    </Suspense>
+  )
+}
+
+function AdminBoardPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -27,6 +36,26 @@ export default function AdminBoardPage() {
   const [to, setTo] = useState('')
   const [q, setQ] = useState('')
   const [skip, setSkip] = useState(0)
+
+  // 共有URLバナー
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (searchParams.get('created') === '1') {
+      const code = localStorage.getItem('admin:lastSessionCode')
+      if (code) {
+        setShareUrl(`${window.location.origin}/student?code=${code}`)
+      }
+    }
+  }, [searchParams])
+
+  async function copyShareUrl() {
+    if (!shareUrl) return
+    await navigator.clipboard.writeText(shareUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const activeSessionId = useMemo(() => selectedSessionId.trim(), [selectedSessionId])
 
@@ -108,6 +137,31 @@ export default function AdminBoardPage() {
           テーマ管理へ
         </Button>
       </div>
+
+      {/* セッション作成直後の共有URLバナー */}
+      {shareUrl && (
+        <div className="mb-4 rounded-md border border-green-300 bg-green-50 p-4">
+          <p className="mb-2 text-sm font-semibold text-green-800">✅ セッションを作成しました！以下のURLを生徒に共有してください：</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 rounded bg-white px-3 py-2 text-sm text-green-900 border border-green-200 font-mono break-all">{shareUrl}</code>
+            <Button
+              tone="admin"
+              size="sm"
+              onClick={() => void copyShareUrl()}
+              className="whitespace-nowrap"
+            >
+              {copied ? 'コピー済み ✓' : 'URLをコピー'}
+            </Button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShareUrl(null)}
+            className="mt-2 text-xs text-green-600 underline hover:text-green-800"
+          >
+            閉じる
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-md border border-admin-border-primary bg-admin-bg-secondary p-3 text-sm text-red-700">{error}</div>

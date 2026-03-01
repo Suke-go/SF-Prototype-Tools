@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import './ops.css'
 
 type InviteCode = { id: string; code: string; usedBy: string | null; expiresAt: string; createdAt: string }
 type ThemeItem = { id: string; title: string; description: string | null; status: string; createdAt: string; _count: { questions: number } }
@@ -119,16 +120,16 @@ export default function OpsPage() {
     // ==================== Login Screen ====================
     if (!authenticated) {
         return (
-            <main className="mx-auto max-w-md p-8">
-                <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                    <h1 className="text-xl font-bold text-gray-900 mb-4">🔧 運用管理</h1>
-                    {error && <p className="mb-3 text-sm text-red-600 bg-red-50 p-2 rounded">{error}</p>}
-                    <label className="block text-sm font-medium text-gray-700 mb-1">運用キー (OPS_SECRET)</label>
+            <main className="ops-page flex items-center justify-center">
+                <div className="ops-login-card w-full max-w-md">
+                    <h1 className="ops-page-title text-xl mb-4">🔧 運用管理</h1>
+                    {error && <p className="ops-alert-error mb-3">{error}</p>}
+                    <label className="ops-label">運用キー (OPS_SECRET)</label>
                     <input type="password" value={opsKey} onChange={(e) => setOpsKey(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="運用キーを入力" />
+                        className="ops-input mb-3" placeholder="運用キーを入力" />
                     <button onClick={handleLogin} disabled={!opsKey.trim() || loading}
-                        className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50">
+                        className="ops-login-btn">
                         {loading ? '認証中...' : 'ログイン'}
                     </button>
                 </div>
@@ -138,23 +139,23 @@ export default function OpsPage() {
 
     // ==================== Dashboard ====================
     return (
-        <main className="mx-auto max-w-6xl p-4 md:p-8">
+        <main className="ops-page mx-auto max-w-6xl p-4 md:p-8">
             <div className="mb-6 flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-gray-900">🔧 運用管理</h1>
+                <h1 className="ops-page-title">🔧 運用管理</h1>
                 <div className="flex items-center gap-4">
-                    <a href={`/ops/article?key=${encodeURIComponent(opsKey)}`} className="text-sm text-blue-600 hover:underline">📝 記事エディタ</a>
-                    <button onClick={() => { setAuthenticated(false); setOpsKey('') }} className="text-sm text-gray-500 hover:text-gray-700">ログアウト</button>
+                    <a href={`/ops/article?key=${encodeURIComponent(opsKey)}`} className="ops-link">📝 記事エディタ</a>
+                    <button onClick={() => { setAuthenticated(false); setOpsKey('') }} className="ops-link text-sm">ログアウト</button>
                 </div>
             </div>
 
-            {error && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>}
-            {success && <div className="mb-4 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">{success}</div>}
+            {error && <div className="ops-alert-error mb-4">{error}</div>}
+            {success && <div className="ops-alert-success mb-4">{success}</div>}
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
                 {/* ========== 招待コード ========== */}
-                <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">📨 招待コード</h2>
+                <section className="ops-section">
+                    <h2 className="ops-heading">📨 招待コード</h2>
                     <div className="flex gap-2 mb-4">
                         <div className="flex-1">
                             <label className="block text-xs text-gray-500 mb-1">件数</label>
@@ -188,18 +189,18 @@ export default function OpsPage() {
                 </section>
 
                 {/* ========== テーマ作成 ========== */}
-                <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">📚 テーマ新規作成</h2>
+                <section className="ops-section">
+                    <h2 className="ops-heading">📚 テーマ新規作成</h2>
                     <div className="space-y-2">
                         <input value={newThemeTitle} onChange={(e) => setNewThemeTitle(e.target.value)}
-                            placeholder="テーマタイトル" className="w-full rounded border border-gray-300 px-3 py-2 text-sm" />
+                            placeholder="テーマタイトル" className="ops-input" />
                         <textarea value={newThemeDesc} onChange={(e) => setNewThemeDesc(e.target.value)}
-                            placeholder="説明（任意）" rows={2} className="w-full rounded border border-gray-300 px-3 py-2 text-sm" />
+                            placeholder="説明（任意）" rows={2} className="ops-input" />
                         <div>
                             <label className="block text-xs text-gray-500 mb-1">設問（1行1問、任意）</label>
                             <textarea value={newThemeQuestions} onChange={(e) => setNewThemeQuestions(e.target.value)}
                                 placeholder={"技術の利用は制限すべきだ。\nプライバシーより安全を優先すべきだ。\n..."} rows={5}
-                                className="w-full rounded border border-gray-300 px-3 py-2 text-sm font-mono" />
+                                className="ops-input font-mono" />
                         </div>
                         <button onClick={() => void createTheme()} disabled={!newThemeTitle.trim()}
                             className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
@@ -209,8 +210,8 @@ export default function OpsPage() {
                 </section>
 
                 {/* ========== テーマ一覧 + 詳細 ========== */}
-                <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm lg:col-span-2">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">📋 テーマ・設問管理</h2>
+                <section className="ops-section lg:col-span-2">
+                    <h2 className="ops-heading">📋 テーマ・設問管理</h2>
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                         {/* テーマ一覧 */}
                         <div>
@@ -247,7 +248,7 @@ export default function OpsPage() {
                                     <label className="block text-xs text-gray-500 mb-1">設問を追加（1行1問）</label>
                                     <textarea value={addQuestionText} onChange={(e) => setAddQuestionText(e.target.value)}
                                         placeholder={"新しい設問を入力...\n1行に1問ずつ"} rows={3}
-                                        className="w-full rounded border border-gray-300 px-3 py-2 text-sm font-mono mb-2" />
+                                        className="ops-input font-mono mb-2" />
                                     <button onClick={() => void addQuestions()} disabled={!addQuestionText.trim()}
                                         className="rounded bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50">
                                         設問を追加
@@ -263,7 +264,7 @@ export default function OpsPage() {
                 </section>
 
                 {/* ========== 学校一覧 ========== */}
-                <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm lg:col-span-2">
+                <section className="ops-section lg:col-span-2">
                     <h2 className="text-lg font-semibold text-gray-900 mb-4">🏫 登録学校</h2>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
