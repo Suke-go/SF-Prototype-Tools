@@ -269,8 +269,12 @@ export default function BriefingPage({ params }: { params: { sessionId: string }
       />
       <header className="mb-8">
         <p className="font-mono text-xs tracking-[0.22em] text-student-text-disabled">BRIEFING</p>
-        <h1 className="mt-2 font-heading text-3xl font-bold text-student-text-primary">読み物と振り返り</h1>
-        <p className="mt-3 text-sm text-student-text-tertiary">テーマに対応する目標の読み物を読み、最後に自分の考えを記録します。</p>
+        <h1 className="mt-2 font-heading text-3xl font-bold text-student-text-primary">
+          {dbArticle ? dbArticle.title : '読み物と振り返り'}
+        </h1>
+        <p className="mt-3 text-sm text-student-text-tertiary">
+          {dbArticle?.subtitle || 'テーマに対応する読み物を読み、最後に自分の考えを記録します。'}
+        </p>
       </header>
 
       {error && (
@@ -298,32 +302,38 @@ export default function BriefingPage({ params }: { params: { sessionId: string }
         </select>
       </section>
 
-      {activeGoal && (
+      {(activeGoal || dbArticle) && (
         <article className="space-y-6">
           {/* ── Data-driven sections ── */}
           {sections.map((section, i) => renderBriefingSection(section, i))}
 
           {/* ── Learning log (always last, needs interactivity) ── */}
-          <div className="rounded-xl border border-student-border-primary bg-student-bg-secondary p-6 md:p-8">
-            <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-student-text-disabled">Reflection</p>
-            <h3 className="mt-2 text-lg font-semibold text-student-text-primary">振り返り（学習ログ）</h3>
-            <textarea
-              value={drafts[activeGoal.key] || ''}
-              onChange={(e) => setDrafts((prev) => ({ ...prev, [activeGoal.key]: e.target.value }))}
-              className="mt-4 h-28 w-full rounded-md border border-student-border-primary bg-student-bg-primary px-4 py-3 text-sm text-student-text-primary focus:outline-none focus:ring-2 focus:ring-student-text-primary"
-              placeholder="読み物を通して気づいたことを記録してください"
-            />
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-xs text-student-text-disabled">
-                {logs[activeGoal.key]
-                  ? `最終保存: ${new Date(logs[activeGoal.key].updatedAt).toLocaleString('ja-JP')}`
-                  : '未保存'}
-              </p>
-              <Button onClick={() => void save(activeGoal.key)} disabled={savingKey === activeGoal.key} size="sm">
-                {savingKey === activeGoal.key ? '保存中...' : '保存'}
-              </Button>
-            </div>
-          </div>
+          {(() => {
+            const goalKey = activeGoal?.key || selectedThemeId
+            if (!goalKey) return null
+            return (
+              <div className="rounded-xl border border-student-border-primary bg-student-bg-secondary p-6 md:p-8">
+                <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-student-text-disabled">Reflection</p>
+                <h3 className="mt-2 text-lg font-semibold text-student-text-primary">振り返り（学習ログ）</h3>
+                <textarea
+                  value={drafts[goalKey] || ''}
+                  onChange={(e) => setDrafts((prev) => ({ ...prev, [goalKey]: e.target.value }))}
+                  className="mt-4 h-28 w-full rounded-md border border-student-border-primary bg-student-bg-primary px-4 py-3 text-sm text-student-text-primary focus:outline-none focus:ring-2 focus:ring-student-text-primary"
+                  placeholder="読み物を通して気づいたことを記録してください"
+                />
+                <div className="mt-3 flex items-center justify-between">
+                  <p className="text-xs text-student-text-disabled">
+                    {logs[goalKey]
+                      ? `最終保存: ${new Date(logs[goalKey].updatedAt).toLocaleString('ja-JP')}`
+                      : '未保存'}
+                  </p>
+                  <Button onClick={() => void save(goalKey)} disabled={savingKey === goalKey} size="sm">
+                    {savingKey === goalKey ? '保存中...' : '保存'}
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
         </article>
       )}
 
