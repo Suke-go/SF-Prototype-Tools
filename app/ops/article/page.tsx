@@ -23,6 +23,18 @@ type ThemeOption = { id: string; title: string; _count: { questions: number } }
 const EMPTY_TECH = { name: '', oneliner: '', bodyParagraphs: ['', ''] }
 const EMPTY_SF = { title: '', author: '', body: '' }
 
+const DEFAULT_CATEGORIES = [
+    'ムーンショット目標1',
+    'ムーンショット目標2',
+    'ムーンショット目標3',
+    'ムーンショット目標4',
+    'ムーンショット目標5',
+    'ムーンショット目標6',
+    'ムーンショット目標7',
+    'ムーンショット目標8',
+    'ムーンショット目標9',
+]
+
 export default function ArticleEditorPage() {
     const [opsKey, setOpsKey] = useState('')
     const [authenticated, setAuthenticated] = useState(false)
@@ -46,6 +58,17 @@ export default function ArticleEditorPage() {
     const [subtitle, setSubtitle] = useState('')
     const [category, setCategory] = useState('')
     const [status, setStatus] = useState<'DRAFT' | 'PUBLISHED'>('DRAFT')
+
+    // Category management
+    const [customCategories, setCustomCategories] = useState<string[]>([])
+    const ALL_CATEGORIES = [...DEFAULT_CATEGORIES, ...customCategories.filter(c => !DEFAULT_CATEGORIES.includes(c))]
+
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('ops:categories')
+            if (saved) setCustomCategories(JSON.parse(saved))
+        } catch { /* ignore */ }
+    }, [])
 
     // Content fields
     const [catchcopy, setCatchcopy] = useState('')
@@ -469,7 +492,31 @@ export default function ArticleEditorPage() {
                         </div>
                         <div>
                             <label className={labelCls}>カテゴリ *</label>
-                            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="例: ムーンショット目標1" className={inputCls} />
+                            <div className="flex gap-2">
+                                <select value={category} onChange={(e) => {
+                                    if (e.target.value === '__custom__') {
+                                        const custom = prompt('新しいカテゴリ名を入力してください:')
+                                        if (custom?.trim()) {
+                                            const updated = [...new Set([...customCategories, custom.trim()])]
+                                            setCustomCategories(updated)
+                                            localStorage.setItem('ops:categories', JSON.stringify(updated))
+                                            setCategory(custom.trim())
+                                        }
+                                    } else {
+                                        setCategory(e.target.value)
+                                    }
+                                }} className={inputCls}>
+                                    <option value="">選択してください</option>
+                                    {ALL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    {customCategories.filter(c => !DEFAULT_CATEGORIES.includes(c)).map(c =>
+                                        <option key={c} value={c}>📌 {c}</option>
+                                    )}
+                                    <option value="__custom__">＋ カスタム追加...</option>
+                                </select>
+                            </div>
+                            {category && !ALL_CATEGORIES.includes(category) && !customCategories.includes(category) && (
+                                <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>カスタム: {category}</p>
+                            )}
                         </div>
                         <div className="md:col-span-2">
                             <label className={labelCls}>記事タイトル *</label>
