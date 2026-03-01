@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { z } from 'zod'
+import { prisma } from '@/lib/prisma'
 
 function verifyOpsSecret(request: NextRequest): boolean {
     const secret = process.env.OPS_SECRET
@@ -155,16 +156,38 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json()
-        const { step, input, category, provider, customPrompt, model } = body as {
+        const { step, input, category, provider, customPrompt, model, themeId } = body as {
             step: string
-            input: string
+            input?: string
             category?: string
             provider?: 'openai' | 'gemini'
             customPrompt?: string
-            model?: string                    // UI からモデル名を直接指定
+            model?: string
+            themeId?: string  // テーマIDからDB自動取得
         }
 
-        if (!step || !input?.trim()) {
+        // themeId が指定されていれば DB からテーマ情報を自動取得
+        let resolvedInput = input?.trim() || ''
+        if (themeId && !resolvedInput) {
+            const theme = await prisma.theme.findUnique({
+                where: { id: themeId },
+                include: {
+                    questions: { orderBy: { order: 'asc' }, select: { questionText: true, order: true } },
+                },
+            })
+            if (theme) {
+                const lines = [
+                    `テーマ: ${theme.title}`,
+                    theme.description ? `\n概要: ${theme.description}` : '',
+                    '',
+                    '設問:',
+                    ...theme.questions.map((q, i) => `${i + 1}. ${q.questionText}`),
+                ].filter(Boolean)
+                resolvedInput = lines.join('\n')
+            }
+        }
+
+        if (!step || !resolvedInput) {
             return NextResponse.json(
                 { success: false, error: { code: 'INVALID_INPUT', message: 'step と input は必須です' } },
                 { status: 400 }
@@ -193,7 +216,7 @@ export async function POST(request: NextRequest) {
             }
             fullPrompt = promptTemplate
             for (const ph of PLACEHOLDERS) {
-                fullPrompt = fullPrompt.replace(ph, input)
+                fullPrompt = fullPrompt.replace(ph, resolvedInput)
             }
             if (category) {
                 const safe = category.replace(/[\\"/\n\r\t]/g, '')
