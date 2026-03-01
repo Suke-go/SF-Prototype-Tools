@@ -19,6 +19,7 @@
   backdrop-filter: blur(12px);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
+
 .ops-section:hover {
   border-color: rgba(255, 255, 255, 0.12);
 }
@@ -28,6 +29,7 @@
   background: rgba(124, 58, 237, 0.06);
   border-color: rgba(124, 58, 237, 0.18);
 }
+
 .ops-section-ai:hover {
   border-color: rgba(124, 58, 237, 0.30);
   box-shadow: 0 0 24px rgba(124, 58, 237, 0.08);
@@ -45,15 +47,18 @@
   line-height: 1.5;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
+
 .ops-input::placeholder {
   color: rgba(255, 255, 255, 0.25);
 }
+
 .ops-input:focus {
   outline: none;
   border-color: rgba(124, 58, 237, 0.5);
   box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
   background: rgba(255, 255, 255, 0.07);
 }
+
 .ops-input:hover:not(:focus) {
   border-color: rgba(255, 255, 255, 0.18);
 }
@@ -87,11 +92,13 @@
   cursor: pointer;
   transition: all 0.15s ease;
 }
+
 .ops-btn-primary:hover {
   background: linear-gradient(135deg, #8b5cf6, #7c3aed);
   box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
   transform: translateY(-1px);
 }
+
 .ops-btn-primary:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -102,6 +109,7 @@
 .ops-btn-gemini {
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
 }
+
 .ops-btn-gemini:hover {
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
@@ -118,6 +126,7 @@
   cursor: pointer;
   transition: all 0.15s ease;
 }
+
 .ops-btn-secondary:hover {
   background: rgba(255, 255, 255, 0.10);
   color: rgba(255, 255, 255, 0.85);
@@ -135,10 +144,12 @@
   cursor: pointer;
   transition: all 0.15s ease;
 }
+
 .ops-btn-save:hover {
   background: linear-gradient(135deg, #10b981, #059669);
   box-shadow: 0 4px 16px rgba(5, 150, 105, 0.3);
 }
+
 .ops-btn-save:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -151,6 +162,7 @@
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
+
 .ops-toggle-btn {
   padding: 0.375rem 0.75rem;
   font-size: 0.75rem;
@@ -161,14 +173,17 @@
   cursor: pointer;
   transition: all 0.15s ease;
 }
+
 .ops-toggle-btn:hover {
   color: rgba(255, 255, 255, 0.8);
   background: rgba(255, 255, 255, 0.05);
 }
+
 .ops-toggle-btn.active-openai {
   background: rgba(124, 58, 237, 0.25);
   color: #c4b5fd;
 }
+
 .ops-toggle-btn.active-gemini {
   background: rgba(37, 99, 235, 0.25);
   color: #93c5fd;
@@ -186,10 +201,12 @@
   cursor: pointer;
   transition: all 0.15s ease;
 }
+
 .ops-step-pill:hover {
   border-color: rgba(124, 58, 237, 0.3);
   color: rgba(255, 255, 255, 0.7);
 }
+
 .ops-step-pill.active {
   background: rgba(124, 58, 237, 0.2);
   border-color: rgba(124, 58, 237, 0.4);
@@ -205,6 +222,7 @@
   border: 1px solid rgba(239, 68, 68, 0.2);
   color: #fca5a5;
 }
+
 .ops-alert-success {
   border-radius: 8px;
   padding: 0.75rem 1rem;
@@ -273,6 +291,7 @@
   cursor: pointer;
   transition: all 0.2s ease;
 }
+
 .ops-login-btn:hover {
   box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
 }
@@ -289,15 +308,20 @@
 
 /* --- Subtle shimmer for generating state --- */
 @keyframes shimmer {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
+  0% {
+    background-position: -200% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
 }
+
 .ops-shimmer {
   background: linear-gradient(90deg,
-    rgba(124, 58, 237, 0.3) 0%,
-    rgba(139, 92, 246, 0.5) 50%,
-    rgba(124, 58, 237, 0.3) 100%
-  );
+      rgba(124, 58, 237, 0.3) 0%,
+      rgba(139, 92, 246, 0.5) 50%,
+      rgba(124, 58, 237, 0.3) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
@@ -309,7 +333,62 @@
   text-decoration: none;
   transition: color 0.15s ease;
 }
+
 .ops-link:hover {
   color: #c4b5fd;
   text-decoration: underline;
+}
+
+/* --- Image dropzone --- */
+.ops-dropzone {
+  border: 2px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  cursor: pointer;
+}
+
+.ops-dropzone:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ops-drop-active {
+  border-color: rgba(124, 58, 237, 0.6) !important;
+  background: rgba(124, 58, 237, 0.06) !important;
+}
+
+.ops-dropzone-sm {
+  border: 2px dashed rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.ops-dropzone-sm:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.ops-dropzone-text {
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 0.875rem;
+}
+
+.ops-preview-img {
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.ops-preview-img-sm {
+  max-height: 80px;
+  border-radius: 6px;
+  object-fit: cover;
 }

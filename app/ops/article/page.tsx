@@ -244,6 +244,28 @@ export default function ArticleEditorPage() {
         setter(prev => { const n = [...prev]; n[i] = v; return n })
     }
 
+    // Drag & drop image handler
+    function handleImageDrop(key: string) {
+        return (e: React.DragEvent<HTMLDivElement>) => {
+            e.preventDefault()
+            e.currentTarget.classList.remove('ops-drop-active')
+            const file = e.dataTransfer.files[0]
+            if (!file || !file.type.startsWith('image/')) return
+            const reader = new FileReader()
+            reader.onload = () => {
+                updateImage(key, 'url', reader.result as string)
+            }
+            reader.readAsDataURL(file)
+        }
+    }
+    function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+        e.preventDefault()
+        e.currentTarget.classList.add('ops-drop-active')
+    }
+    function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+        e.currentTarget.classList.remove('ops-drop-active')
+    }
+
     const inputCls = 'ops-input'
     const labelCls = 'ops-label'
     const sectionCls = 'ops-section'
@@ -405,7 +427,15 @@ export default function ArticleEditorPage() {
 
                 {/* ===== HERO IMAGE ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-3">📷 IMAGE-A: ヒーローイメージ</h2>
+                    <h2 className="ops-heading">📷 IMAGE-A: ヒーローイメージ</h2>
+                    <div onDrop={handleImageDrop('hero')} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
+                        className="ops-dropzone mb-3">
+                        {images.hero?.url ? (
+                            <img src={images.hero.url} alt={images.hero.alt || ''} className="ops-preview-img" />
+                        ) : (
+                            <p className="ops-dropzone-text">🖼 画像をドラッグ＆ドロップ または URLを入力</p>
+                        )}
+                    </div>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                         <input value={images.hero?.url || ''} onChange={(e) => updateImage('hero', 'url', e.target.value)} placeholder="画像URL" className={inputCls} />
                         <input value={images.hero?.alt || ''} onChange={(e) => updateImage('hero', 'alt', e.target.value)} placeholder="代替テキスト" className={inputCls} />
@@ -414,9 +444,9 @@ export default function ArticleEditorPage() {
                 </section>
 
                 {/* ===== VIGNETTE ===== */}
-                <section className={`${sectionCls} bg-gray-50`}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-1">■ つかみ（ヴィネット）</h2>
-                    <p className="text-xs text-gray-400 mb-3">キャッチコピー + 5人の断片（各80〜100字、計500字）</p>
+                <section className={sectionCls}>
+                    <h2 className="ops-heading">■ つかみ（ヴィネット）</h2>
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>キャッチコピー + 5人の断片（各８０〜１００字、計５００字）</p>
                     <label className={labelCls}>キャッチコピー</label>
                     <input value={catchcopy} onChange={(e) => setCatchcopy(e.target.value)} placeholder="20〜30字" className={`${inputCls} mb-3`} />
                     {vignettes.map((v, i) => (
@@ -429,8 +459,8 @@ export default function ArticleEditorPage() {
 
                 {/* ===== PROBLEM ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-1">■ 困りごとの背景</h2>
-                    <p className="text-xs text-gray-400 mb-3">現実の問題を事実として伝える（計300字）</p>
+                    <h2 className="ops-heading">■ 困りごとの背景</h2>
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>現実の問題を事実として伝える（計300字）</p>
                     {problemParagraphs.map((p, i) => (
                         <div key={i} className="mb-2">
                             <textarea value={p} onChange={(e) => updateParagraph(setProblemParagraphs, i, e.target.value)} rows={3} placeholder={`段落 ${i + 1}`} className={inputCls} />
@@ -440,7 +470,15 @@ export default function ArticleEditorPage() {
 
                 {/* ===== TRANSITION IMAGE ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-3">📷 IMAGE-B: 転換イメージ</h2>
+                    <h2 className="ops-heading">📷 IMAGE-B: 転換イメージ</h2>
+                    <div onDrop={handleImageDrop('transition')} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
+                        className="ops-dropzone mb-3">
+                        {images.transition?.url ? (
+                            <img src={images.transition.url} alt={images.transition.alt || ''} className="ops-preview-img" />
+                        ) : (
+                            <p className="ops-dropzone-text">🖼 画像をドラッグ＆ドロップ</p>
+                        )}
+                    </div>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                         <input value={images.transition?.url || ''} onChange={(e) => updateImage('transition', 'url', e.target.value)} placeholder="画像URL" className={inputCls} />
                         <input value={images.transition?.alt || ''} onChange={(e) => updateImage('transition', 'alt', e.target.value)} placeholder="代替テキスト" className={inputCls} />
@@ -450,8 +488,8 @@ export default function ArticleEditorPage() {
 
                 {/* ===== GOAL ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-1">■ この計画が目指すこと</h2>
-                    <p className="text-xs text-gray-400 mb-3">目標を具体的に（計300字）</p>
+                    <h2 className="ops-heading">■ この計画が目指すこと</h2>
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>目標を具体的に（計300字）</p>
                     {goalParagraphs.map((p, i) => (
                         <div key={i} className="mb-2">
                             <textarea value={p} onChange={(e) => updateParagraph(setGoalParagraphs, i, e.target.value)} rows={3} placeholder={`段落 ${i + 1}`} className={inputCls} />
@@ -460,12 +498,12 @@ export default function ArticleEditorPage() {
                 </section>
 
                 {/* ===== TECHS ===== */}
-                <section className={`${sectionCls} bg-gray-50`}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-1">■ 技術説明（×3）</h2>
-                    <p className="text-xs text-gray-400 mb-3">計500字</p>
+                <section className={sectionCls}>
+                    <h2 className="ops-heading">■ 技術説明（×3）</h2>
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>計500字</p>
                     {techs.map((t, ti) => (
-                        <div key={ti} className="mb-4 rounded border border-gray-200 bg-white p-3">
-                            <p className="text-xs font-medium text-gray-600 mb-2">技術 {ti + 1}</p>
+                        <div key={ti} className="ops-nested-card">
+                            <p className="text-xs font-medium mb-2" style={{ color: 'rgba(255,255,255,0.5)' }}>技術 {ti + 1}</p>
                             <div className="grid grid-cols-1 gap-2 md:grid-cols-2 mb-2">
                                 <input value={t.name} onChange={(e) => updateTech(ti, 'name', e.target.value)} placeholder="技術名" className={inputCls} />
                                 <input value={t.oneliner} onChange={(e) => updateTech(ti, 'oneliner', e.target.value)} placeholder="一言説明（30字）" className={inputCls} />
@@ -475,6 +513,14 @@ export default function ArticleEditorPage() {
                                     placeholder={`本文 段落${pi + 1}`} className={`${inputCls} mb-1`} />
                             ))}
                             {/* Tech image */}
+                            <div onDrop={handleImageDrop(`tech${ti + 1}`)} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
+                                className="ops-dropzone-sm mt-2">
+                                {images[`tech${ti + 1}`]?.url ? (
+                                    <img src={images[`tech${ti + 1}`].url} alt={images[`tech${ti + 1}`].alt || ''} className="ops-preview-img-sm" />
+                                ) : (
+                                    <p className="ops-dropzone-text text-xs">🖼 技術{ti + 1}の画像をD＆D</p>
+                                )}
+                            </div>
                             <div className="mt-2 grid grid-cols-3 gap-2">
                                 <input value={images[`tech${ti + 1}`]?.url || ''} onChange={(e) => updateImage(`tech${ti + 1}`, 'url', e.target.value)} placeholder="画像URL" className={`${inputCls} text-xs`} />
                                 <input value={images[`tech${ti + 1}`]?.alt || ''} onChange={(e) => updateImage(`tech${ti + 1}`, 'alt', e.target.value)} placeholder="Alt" className={`${inputCls} text-xs`} />
@@ -486,8 +532,8 @@ export default function ArticleEditorPage() {
 
                 {/* ===== CHALLENGES ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-1">■ 今はまだ難しいこと</h2>
-                    <p className="text-xs text-gray-400 mb-3">計300字</p>
+                    <h2 className="ops-heading">■ 今はまだ難しいこと</h2>
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>計300字</p>
                     {challengeParagraphs.map((p, i) => (
                         <div key={i} className="mb-2">
                             <textarea value={p} onChange={(e) => updateParagraph(setChallengeParagraphs, i, e.target.value)} rows={3} placeholder={`段落 ${i + 1}`} className={inputCls} />
@@ -497,13 +543,13 @@ export default function ArticleEditorPage() {
 
                 {/* ===== SF REFERENCES ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-1">■ SFが先に描いていた</h2>
-                    <p className="text-xs text-gray-400 mb-3">引用ブロック ×1〜2</p>
+                    <h2 className="ops-heading">■ SFが先に描いていた</h2>
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>引用ブロック ×1〜2</p>
                     <label className={labelCls}>SF導入文</label>
                     <input value={sfIntro} onChange={(e) => setSfIntro(e.target.value)} placeholder="30字" className={`${inputCls} mb-3`} />
                     {sfRefs.map((sf, i) => (
-                        <div key={i} className="mb-3 rounded border border-gray-200 p-3 bg-gray-50">
-                            <p className="text-xs font-medium text-gray-600 mb-2">SF引用 {i + 1}</p>
+                        <div key={i} className="ops-nested-card">
+                            <p className="text-xs font-medium mb-2" style={{ color: 'rgba(255,255,255,0.5)' }}>SF引用 {i + 1}</p>
                             <div className="grid grid-cols-2 gap-2 mb-2">
                                 <input value={sf.title} onChange={(e) => updateSfRef(i, 'title', e.target.value)} placeholder="作品名" className={inputCls} />
                                 <input value={sf.author} onChange={(e) => updateSfRef(i, 'author', e.target.value)} placeholder="著者" className={inputCls} />
@@ -517,7 +563,15 @@ export default function ArticleEditorPage() {
 
                 {/* ===== CLOSING IMAGE ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-3">📷 IMAGE-F: 結びのイメージ</h2>
+                    <h2 className="ops-heading">📷 IMAGE-F: 結びのイメージ</h2>
+                    <div onDrop={handleImageDrop('closing')} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
+                        className="ops-dropzone mb-3">
+                        {images.closing?.url ? (
+                            <img src={images.closing.url} alt={images.closing.alt || ''} className="ops-preview-img" />
+                        ) : (
+                            <p className="ops-dropzone-text">🖼 画像をドラッグ＆ドロップ</p>
+                        )}
+                    </div>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                         <input value={images.closing?.url || ''} onChange={(e) => updateImage('closing', 'url', e.target.value)} placeholder="画像URL" className={inputCls} />
                         <input value={images.closing?.alt || ''} onChange={(e) => updateImage('closing', 'alt', e.target.value)} placeholder="代替テキスト" className={inputCls} />
@@ -527,7 +581,7 @@ export default function ArticleEditorPage() {
 
                 {/* ===== CLOSING + SOURCES ===== */}
                 <section className={sectionCls}>
-                    <h2 className="text-base font-semibold text-gray-800 mb-1">■ 結び</h2>
+                    <h2 className="ops-heading">■ 結び</h2>
                     <label className={labelCls}>問いかけ（60〜100字）</label>
                     <textarea value={closingQuestion} onChange={(e) => setClosingQuestion(e.target.value)} rows={2} placeholder="読者への問いかけ" className={`${inputCls} mb-4`} />
                     <label className={labelCls}>出典</label>
