@@ -97,27 +97,37 @@ export function buildArticleSections(
 
     // 7. SF References
     const validSfRefs = content.sfReferences?.filter(r => r.title) || []
-    if (content.sfIntro || validSfRefs.length > 0) {
+    if (validSfRefs.length > 0) {
         const works = validSfRefs.map(r => ({
             title: r.title,
             author: r.author,
             reason: r.body,
             url: '',
         }))
-        if (works.length > 0) {
-            sections.push({
-                type: 'sfWorks',
-                works,
-            })
-        }
-        if (content.sfConnection) {
-            sections.push({
-                type: 'custom',
-                tag: 'SF CONNECTION',
-                title: 'SFとの接点',
-                body: content.sfConnection,
-            })
-        }
+        sections.push({
+            type: 'sfWorks',
+            works,
+        })
+    }
+
+    // 7b. SF Intro as custom section
+    if (content.sfIntro) {
+        sections.push({
+            type: 'custom',
+            tag: 'SF INTRO',
+            title: 'SFプロトタイピングとは',
+            body: content.sfIntro,
+        })
+    }
+
+    // 7c. SF Connection
+    if (content.sfConnection) {
+        sections.push({
+            type: 'custom',
+            tag: 'SF CONNECTION',
+            title: 'SFとの接点',
+            body: content.sfConnection,
+        })
     }
 
     // 8. Closing question
