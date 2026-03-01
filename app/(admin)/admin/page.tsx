@@ -22,6 +22,7 @@ export default function AdminHomePage() {
   const [error, setError] = useState<string | null>(null)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
+  const [inviteCode, setInviteCode] = useState('')
   const [schoolCode, setSchoolCode] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [teacherName, setTeacherName] = useState('')
@@ -53,6 +54,7 @@ export default function AdminHomePage() {
   const canSubmit = useMemo(() => {
     if (mode === 'login') return email.trim().length > 0 && password.length > 0
     return (
+      inviteCode.trim().length > 0 &&
       schoolCode.trim().length >= 3 &&
       schoolName.trim().length >= 2 &&
       teacherName.trim().length > 0 &&
@@ -69,7 +71,7 @@ export default function AdminHomePage() {
 
     try {
       const endpoint = mode === 'login' ? '/api/auth/teacher/login' : '/api/auth/teacher/register'
-      const payload = mode === 'login' ? { email, password } : { schoolCode, schoolName, teacherName, email, password }
+      const payload = mode === 'login' ? { email, password } : { inviteCode, schoolCode, schoolName, teacherName, email, password }
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -189,6 +191,14 @@ export default function AdminHomePage() {
           <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'register' && (
               <div className="grid gap-3">
+                <Input
+                  label="招待コード"
+                  value={inviteCode}
+                  onChange={(event) => setInviteCode(event.target.value)}
+                  placeholder="INV-XXXXXXXX"
+                  helperText="管理者から共有された招待コードを入力してください"
+                  className="border-admin-border-primary bg-admin-bg-primary text-admin-text-primary"
+                />
                 <Input
                   label="学校コード"
                   value={schoolCode}

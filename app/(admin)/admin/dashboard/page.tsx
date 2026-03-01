@@ -534,6 +534,15 @@ export default function AdminDashboardPage() {
                   </Button>
                   <Button
                     tone="admin"
+                    onClick={() => router.push(`/admin/session/${encodeURIComponent(selectedSessionId)}/survey`)}
+                    disabled={!selectedSessionId}
+                    variant="secondary"
+                    className="w-full text-sm"
+                  >
+                    教育効果アンケートへ
+                  </Button>
+                  <Button
+                    tone="admin"
                     onClick={() => router.push(`/admin/session/${encodeURIComponent(selectedSessionId)}/review`)}
                     disabled={!selectedSessionId}
                     variant="secondary"

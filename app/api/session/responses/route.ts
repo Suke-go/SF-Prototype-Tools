@@ -131,13 +131,15 @@ export async function GET(request: NextRequest) {
       let yes = 0
       let no = 0
       let unknown = 0
+      let unanswered = 0
 
       for (const student of students) {
         const outputId = toOutputId(student.id)
         const value = responseMap[outputId]?.[question.id]
         if (value === 'YES') yes += 1
         else if (value === 'NO') no += 1
-        else unknown += 1
+        else if (value === 'UNKNOWN') unknown += 1
+        else unanswered += 1
       }
 
       return {
@@ -145,16 +147,21 @@ export async function GET(request: NextRequest) {
         yes,
         no,
         unknown,
+        unanswered,
       }
     })
 
     const vectors = students.map((student) => {
       const outputId = toOutputId(student.id)
-      const qVector = questions.map((question) => {
-        const value = responseMap[outputId]?.[question.id]
-        if (value === 'YES') return 1
-        if (value === 'NO') return -1
-        return 0
+      const studentResponses = responseMap[outputId] || {}
+      // [answer_value, answered_flag] pair per question:
+      // YES -> [1,1], NO -> [-1,1], UNKNOWN -> [0,1], unanswered -> [0,0]
+      const qVector = questions.flatMap((question) => {
+        const value = studentResponses[question.id]
+        if (value === 'YES') return [1, 1]
+        if (value === 'NO') return [-1, 1]
+        if (value === 'UNKNOWN') return [0, 1]
+        return [0, 0]
       })
       const bigFive = student.bigFiveResult
       const bfVector =
@@ -169,6 +176,37 @@ export async function GET(request: NextRequest) {
         vector: [...qVector, ...bfVector],
       }
     })
+
+    const surveyStatus =
+      auth.role === 'student' && auth.studentId
+        ? await (async () => {
+            const [preSurvey, postSurvey] = await Promise.all([
+              prisma.sessionSurveyResponse.findUnique({
+                where: {
+                  studentId_phase: {
+                    studentId: auth.studentId!,
+                    phase: 'PRE',
+                  },
+                },
+                select: { id: true, consentToResearch: true },
+              }),
+              prisma.sessionSurveyResponse.findUnique({
+                where: {
+                  studentId_phase: {
+                    studentId: auth.studentId!,
+                    phase: 'POST',
+                  },
+                },
+                select: { id: true },
+              }),
+            ])
+            return {
+              preCompleted: Boolean(preSurvey),
+              postCompleted: Boolean(postSurvey),
+              consentToResearch: preSurvey?.consentToResearch ?? null,
+            }
+          })()
+        : null
 
     return NextResponse.json({
       success: true,
@@ -193,6 +231,7 @@ export async function GET(request: NextRequest) {
         }),
         vectors,
         questionDistributions,
+        ...(surveyStatus ? { surveyStatus } : {}),
         ...(isTeacher ? { responseMap } : {}),
       },
     })

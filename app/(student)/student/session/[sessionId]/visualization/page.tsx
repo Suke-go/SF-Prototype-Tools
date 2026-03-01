@@ -18,14 +18,26 @@ const CLUSTER_PALETTE: { fill: string; shape: ClusterShape; label: string }[] = 
   { fill: 'rgba(89,161,79,0.85)', shape: 'star', label: 'タイプE' },
 ]
 
+const RESPONSE_LABELS: Record<ResponseState, string> = {
+  YES: 'はい',
+  NO: 'いいえ',
+  UNKNOWN: 'わからない',
+  UNANSWERED: '未回答',
+}
+
 type SessionResponses = {
   sessionId: string
   selectedThemeId?: string | null
   questions: { id: string; order: number; text: string; themeId?: string }[]
   students: { id: string; name: string | null; progressStatus: string }[]
   vectors: UMAPInput[]
-  questionDistributions?: { questionId: string; yes: number; no: number; unknown: number }[]
+  questionDistributions?: { questionId: string; yes: number; no: number; unknown: number; unanswered: number }[]
   responseMap?: Record<string, Record<string, 'YES' | 'NO' | 'UNKNOWN'>>
+  surveyStatus?: {
+    preCompleted: boolean
+    postCompleted: boolean
+    consentToResearch: boolean | null
+  }
 }
 
 type Point = UMAPResult & { cluster: number }
@@ -35,6 +47,14 @@ type Tooltip = {
   y: number
   text: string
 }
+
+type ProjectedPoint = {
+  point: Point
+  x: number
+  y: number
+}
+
+type ResponseState = 'YES' | 'NO' | 'UNKNOWN' | 'UNANSWERED'
 
 function drawShape(ctx: CanvasRenderingContext2D, shape: ClusterShape, x: number, y: number, r: number) {
   ctx.beginPath()
@@ -95,6 +115,9 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
   const [showGuide, setShowGuide] = useState(false)
 
   const workerRef = useRef<Worker | null>(null)
+  const projectedPointsRef = useRef<ProjectedPoint[]>([])
+  const moveFrameRef = useRef<number | null>(null)
+  const pendingPointerRef = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -115,7 +138,6 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
 
         const vectors = data.vectors
         if (vectors.length === 0) throw new Error('回答データがありません')
-        if (vectors.length < 15) return
 
         setStage('COMPUTE')
 
@@ -147,7 +169,7 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
 
           worker.addEventListener('message', onMessage)
           worker.addEventListener('error', onError)
-          worker.postMessage({ type: 'compute', payload: { vectors, k: Math.min(5, vectors.length) } })
+          worker.postMessage({ type: 'compute', payload: { vectors } })
         })
 
         if (!cancelled) setUmapResults(computed)
@@ -174,6 +196,15 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
     return () => {
       workerRef.current?.terminate()
       workerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (moveFrameRef.current !== null) {
+        cancelAnimationFrame(moveFrameRef.current)
+        moveFrameRef.current = null
+      }
     }
   }, [])
 
@@ -241,8 +272,11 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
       ctx.stroke()
     }
 
+    const projectedPoints: ProjectedPoint[] = []
+
     for (const point of umapResults) {
       const { x, y } = toCanvas(point, W, H)
+      projectedPoints.push({ point, x, y })
       const isMe = Boolean(point.isSelf)
 
       if (isMe) {
@@ -283,7 +317,13 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
     })
     ctx.fillStyle = 'rgba(255,255,255,0.5)'
     ctx.fillText('◎ あなたの位置', legendX0 + CLUSTER_PALETTE.length * 95, legendY + 4)
+    projectedPointsRef.current = projectedPoints
   }, [projection, selected, toCanvas, umapResults])
+
+  useEffect(() => {
+    if (umapResults.length > 0) return
+    projectedPointsRef.current = []
+  }, [umapResults.length])
 
   function pickPoint(clientX: number, clientY: number): Point | null {
     const canvas = canvasRef.current
@@ -293,22 +333,19 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
     const my = clientY - rect.top
 
     let found: Point | null = null
-    for (const point of umapResults) {
-      const { x, y } = toCanvas(point, rect.width, rect.height)
-      const dx = mx - x
-      const dy = my - y
+    for (const projected of projectedPointsRef.current) {
+      const dx = mx - projected.x
+      const dy = my - projected.y
       if (dx * dx + dy * dy <= 13 * 13) {
-        found = point
+        found = projected.point
         break
       }
     }
     return found
   }
 
-  function handleCanvasPointerMove(event: PointerEvent<HTMLCanvasElement>) {
-    if (event.pointerType === 'touch') return
-
-    const point = pickPoint(event.clientX, event.clientY)
+  function updateTooltip(clientX: number, clientY: number) {
+    const point = pickPoint(clientX, clientY)
     if (!point) {
       setTooltip(null)
       return
@@ -318,9 +355,22 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     setTooltip({
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top - 30,
+      x: clientX - rect.left,
+      y: clientY - rect.top - 30,
       text: point.isSelf ? 'あなたの位置' : CLUSTER_PALETTE[point.cluster % CLUSTER_PALETTE.length].label,
+    })
+  }
+
+  function handleCanvasPointerMove(event: PointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType === 'touch') return
+    pendingPointerRef.current = { x: event.clientX, y: event.clientY }
+    if (moveFrameRef.current !== null) return
+    moveFrameRef.current = requestAnimationFrame(() => {
+      moveFrameRef.current = null
+      const pending = pendingPointerRef.current
+      pendingPointerRef.current = null
+      if (!pending) return
+      updateTooltip(pending.x, pending.y)
     })
   }
 
@@ -332,15 +382,7 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
       setTooltip(null)
       return
     }
-
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    setTooltip({
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top - 30,
-      text: point.isSelf ? 'あなたの位置' : CLUSTER_PALETTE[point.cluster % CLUSTER_PALETTE.length].label,
-    })
+    updateTooltip(event.clientX, event.clientY)
   }
 
   const clusterCounts = useMemo(() => {
@@ -353,20 +395,24 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
     if (!sessionData) return []
     // サーバーから集計済みデータを使用（生徒には responseMap が送られないため）
     if (sessionData.questionDistributions) {
+      const distByQuestionId = new Map(sessionData.questionDistributions.map((dist) => [dist.questionId, dist]))
       return sessionData.questions.map((question) => {
-        const dist = sessionData.questionDistributions!.find((d) => d.questionId === question.id)
+        const dist = distByQuestionId.get(question.id)
         const yes = dist?.yes ?? 0
         const no = dist?.no ?? 0
         const unknown = dist?.unknown ?? 0
-        const total = yes + no + unknown || 1
+        const unanswered = dist?.unanswered ?? 0
+        const total = yes + no + unknown + unanswered || 1
         return {
           question,
           yes,
           no,
           unknown,
+          unanswered,
           yesPct: Math.round((yes / total) * 100),
           noPct: Math.round((no / total) * 100),
           unknownPct: Math.round((unknown / total) * 100),
+          unansweredPct: Math.round((unanswered / total) * 100),
         }
       })
     }
@@ -376,26 +422,123 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
       let yes = 0
       let no = 0
       let unknown = 0
+      let unanswered = 0
       for (const studentResponses of Object.values(sessionData.responseMap!)) {
         const value = studentResponses[question.id]
         if (value === 'YES') yes += 1
         else if (value === 'NO') no += 1
-        else unknown += 1
+        else if (value === 'UNKNOWN') unknown += 1
+        else unanswered += 1
       }
-      const total = yes + no + unknown || 1
+      const total = yes + no + unknown + unanswered || 1
       return {
         question,
         yes,
         no,
         unknown,
+        unanswered,
         yesPct: Math.round((yes / total) * 100),
         noPct: Math.round((no / total) * 100),
         unknownPct: Math.round((unknown / total) * 100),
+        unansweredPct: Math.round((unanswered / total) * 100),
       }
     })
   }, [sessionData])
 
-  const useFallbackVisualization = Boolean(sessionData && sessionData.vectors.length < 15)
+  const isSmallSample = (sessionData?.vectors.length ?? 0) < 15
+
+  const vectorByStudentId = useMemo(() => {
+    const map = new Map<string, number[]>()
+    for (const vectorEntry of sessionData?.vectors || []) {
+      map.set(vectorEntry.studentId, vectorEntry.vector)
+    }
+    return map
+  }, [sessionData])
+
+  const decodeResponseAt = useCallback(
+    (vector: number[] | undefined, questionIndex: number): ResponseState => {
+      if (!vector) return 'UNANSWERED'
+      const base = questionIndex * 2
+      const answerValue = vector[base] ?? 0
+      const answeredFlag = vector[base + 1] ?? 0
+      if (answeredFlag < 0.5) return 'UNANSWERED'
+      if (answerValue > 0) return 'YES'
+      if (answerValue < 0) return 'NO'
+      return 'UNKNOWN'
+    },
+    []
+  )
+
+  const selectedComparison = useMemo(() => {
+    if (!selected || !sessionData || selected.isSelf) return null
+    const selfVector = sessionData.vectors.find((entry) => entry.isSelf)?.vector
+    const targetVector = vectorByStudentId.get(selected.studentId)
+    if (!selfVector || !targetVector) return null
+
+    const disagreements: Array<{
+      questionId: string
+      order: number
+      text: string
+      mine: ResponseState
+      other: ResponseState
+      score: number
+    }> = []
+    const agreements: Array<{
+      questionId: string
+      order: number
+      text: string
+      mine: ResponseState
+      other: ResponseState
+      score: number
+    }> = []
+
+    const toPolarity = (state: ResponseState) => {
+      if (state === 'YES') return 1
+      if (state === 'NO') return -1
+      return 0
+    }
+
+    for (let questionIndex = 0; questionIndex < sessionData.questions.length; questionIndex += 1) {
+      const question = sessionData.questions[questionIndex]
+      const mine = decodeResponseAt(selfVector, questionIndex)
+      const other = decodeResponseAt(targetVector, questionIndex)
+      if (mine === 'UNANSWERED' && other === 'UNANSWERED') continue
+
+      if (mine === other && mine !== 'UNANSWERED') {
+        agreements.push({
+          questionId: question.id,
+          order: question.order,
+          text: question.text,
+          mine,
+          other,
+          score: mine === 'UNKNOWN' ? 1 : 2,
+        })
+        continue
+      }
+
+      const score =
+        mine === 'UNANSWERED' || other === 'UNANSWERED'
+          ? 1
+          : Math.abs(toPolarity(mine) - toPolarity(other))
+
+      disagreements.push({
+        questionId: question.id,
+        order: question.order,
+        text: question.text,
+        mine,
+        other,
+        score,
+      })
+    }
+
+    disagreements.sort((a, b) => b.score - a.score || a.order - b.order)
+    agreements.sort((a, b) => b.score - a.score || a.order - b.order)
+
+    return {
+      disagreements: disagreements.slice(0, 3),
+      agreements: agreements.slice(0, 3),
+    }
+  }, [decodeResponseAt, selected, sessionData, vectorByStudentId])
 
   if (loading) {
     return (
@@ -463,7 +606,45 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
         </Card>
       )}
 
-      {!useFallbackVisualization ? (
+      {isSmallSample && (
+        <Card className="mb-4 border border-student-border-primary bg-student-bg-secondary p-4">
+          <CardContent>
+            <h2 className="text-sm font-semibold text-student-text-primary">サンプル数に関する注意</h2>
+            <p className="mt-2 text-sm text-student-text-secondary">
+              参加者が15人未満のため、地図は参考表示です。分布とあわせて解釈してください。
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {sessionData?.surveyStatus?.consentToResearch && !sessionData.surveyStatus.postCompleted && (
+        <Card className="mb-4 border border-student-border-primary bg-student-bg-secondary p-4">
+          <CardContent>
+            <h2 className="text-sm font-semibold text-student-text-primary">授業後アンケート（約3分）</h2>
+            <p className="mt-2 text-sm text-student-text-secondary">
+              授業後の変化を記録すると、次回の授業改善と研究分析に役立ちます。
+            </p>
+            <Button
+              className="mt-3"
+              size="sm"
+              onClick={() => router.push(`/student/session/${encodeURIComponent(sessionId)}/survey/post`)}
+            >
+              回答する
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {sessionData?.surveyStatus?.consentToResearch && sessionData.surveyStatus.postCompleted && (
+        <Card className="mb-4 border border-student-border-primary bg-student-bg-secondary p-4">
+          <CardContent>
+            <h2 className="text-sm font-semibold text-student-text-primary">授業後アンケート</h2>
+            <p className="mt-2 text-sm text-student-text-secondary">回答済みです。協力ありがとうございます。</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {umapResults.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
           <div className="relative rounded-lg border border-student-border-primary bg-student-bg-primary">
             <canvas
@@ -563,6 +744,46 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
                   <p className="mt-2 text-xs text-student-text-tertiary">
                     X/Y座標は比較用の位置です。値そのものに意味はありません。
                   </p>
+
+                  {!selected.isSelf && selectedComparison && (
+                    <>
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold text-student-text-primary">差が大きい設問</p>
+                        {selectedComparison.disagreements.length === 0 ? (
+                          <p className="mt-1 text-xs text-student-text-tertiary">大きな差分は見つかりませんでした。</p>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            {selectedComparison.disagreements.map((item) => (
+                              <div key={item.questionId} className="rounded border border-student-border-primary bg-student-bg-primary p-2">
+                                <p className="truncate text-xs text-student-text-secondary">Q{item.order}. {item.text}</p>
+                                <p className="mt-1 text-xs text-student-text-tertiary">
+                                  あなた: {RESPONSE_LABELS[item.mine]} / 相手: {RESPONSE_LABELS[item.other]}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold text-student-text-primary">一致している設問</p>
+                        {selectedComparison.agreements.length === 0 ? (
+                          <p className="mt-1 text-xs text-student-text-tertiary">一致している設問はまだありません。</p>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            {selectedComparison.agreements.map((item) => (
+                              <div key={item.questionId} className="rounded border border-student-border-primary bg-student-bg-primary p-2">
+                                <p className="truncate text-xs text-student-text-secondary">Q{item.order}. {item.text}</p>
+                                <p className="mt-1 text-xs text-student-text-tertiary">
+                                  共通回答: {RESPONSE_LABELS[item.mine]}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -571,11 +792,11 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
       ) : (
         <Card className="mb-6 border border-student-border-primary bg-student-bg-secondary">
           <CardHeader>
-            <CardTitle className="text-base">分布表示モード</CardTitle>
+            <CardTitle className="text-base">マップ表示を準備できませんでした</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-student-text-secondary">
-              参加者が15人未満のため、誤解を避ける目的でマップ表示は行わず、設問ごとの回答分布を表示します。
+              座標の生成に失敗したため、設問ごとの回答分布のみ表示します。
             </p>
           </CardContent>
         </Card>
@@ -583,19 +804,21 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
 
       <section className="mt-6 rounded-lg border border-student-border-primary bg-student-bg-secondary p-4">
         <h2 className="text-sm font-semibold text-student-text-primary">
-          {useFallbackVisualization ? '回答分布（全設問）' : '回答分布（上位6問）'}
+          {isSmallSample ? '回答分布（全設問）' : '回答分布（上位6問）'}
         </h2>
         <div className="mt-3 space-y-3">
-          {(useFallbackVisualization ? responseDistributions : responseDistributions.slice(0, 6)).map((row) => (
+          {(isSmallSample ? responseDistributions : responseDistributions.slice(0, 6)).map((row) => (
             <div key={row.question.id} className="text-sm">
               <p className="mb-1 truncate text-student-text-secondary">Q{row.question.order}. {row.question.text}</p>
               <div className="flex h-3 w-full overflow-hidden rounded-full">
                 <div className="bg-emerald-500" style={{ width: `${row.yesPct}%` }} />
                 <div className="bg-amber-400" style={{ width: `${row.unknownPct}%` }} />
                 <div className="bg-rose-400" style={{ width: `${row.noPct}%` }} />
+                <div className="bg-slate-500" style={{ width: `${row.unansweredPct}%` }} />
               </div>
               <p className="mt-1 text-xs text-student-text-tertiary">
                 はい {row.yes} ({row.yesPct}%) / わからない {row.unknown} ({row.unknownPct}%) / いいえ {row.no} ({row.noPct}%)
+                {' / '}未回答 {row.unanswered} ({row.unansweredPct}%)
               </p>
             </div>
           ))}

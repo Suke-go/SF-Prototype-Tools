@@ -158,15 +158,26 @@ export default function AdminReviewPage() {
     try {
       setBulkSaving(true)
       setError(null)
-      for (const logId of logIds) {
-        const res = await fetch('/api/session/review', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ learningLogId: logId, ...bulkDraft }),
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json?.error?.message || '一括レビュー保存に失敗しました')
-      }
+      const queue = [...logIds]
+      const payloadTemplate = { ...bulkDraft }
+      const concurrency = Math.min(4, queue.length)
+
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (queue.length > 0) {
+          const logId = queue.shift()
+          if (!logId) return
+
+          const res = await fetch('/api/session/review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ learningLogId: logId, ...payloadTemplate }),
+          })
+          const json = await res.json()
+          if (!res.ok) throw new Error(json?.error?.message || '一括レビュー保存に失敗しました')
+        }
+      })
+
+      await Promise.all(workers)
       if (sessionId) await fetchLogs(sessionId)
     } catch (err) {
       setError(err instanceof Error ? err.message : '一括レビュー保存に失敗しました')

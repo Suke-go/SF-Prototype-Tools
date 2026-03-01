@@ -1,10 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getAuthContext, requireTeacher } from '@/lib/middleware/auth'
+import { safeSurveyAnswers } from '@/lib/survey/definition'
 
 function csvEscape(value: string): string {
   if (/[",\n]/.test(value)) return `"${value.replaceAll('"', '""')}"`
   return value
+}
+
+function meanLikert(answers: Record<string, number> | undefined): number | null {
+  if (!answers) return null
+  const values = Object.values(answers).filter((value): value is number => typeof value === 'number')
+  if (values.length === 0) return null
+  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100
 }
 
 export async function GET(request: NextRequest) {
@@ -33,6 +41,7 @@ export async function GET(request: NextRequest) {
         },
       },
     })
+
     if (!session) {
       return NextResponse.json(
         { success: false, error: { code: 'FORBIDDEN', message: 'このセッションをエクスポートする権限がありません' } },
@@ -59,6 +68,15 @@ export async function GET(request: NextRequest) {
       include: {
         bigFiveResult: true,
         responses: true,
+        surveyResponses: {
+          select: {
+            phase: true,
+            consentToResearch: true,
+            consentToQuote: true,
+            answers: true,
+            updatedAt: true,
+          },
+        },
       },
     })
 
@@ -67,6 +85,11 @@ export async function GET(request: NextRequest) {
         'studentId',
         'name',
         'progressStatus',
+        'surveyConsentResearch',
+        'surveyConsentQuote',
+        'surveyPreMean',
+        'surveyPostMean',
+        'surveyMeanDelta',
         'extraversion',
         'agreeableness',
         'conscientiousness',
@@ -78,12 +101,28 @@ export async function GET(request: NextRequest) {
       const rows = students.map((student) => {
         const bf = student.bigFiveResult
         const responseMap: Record<string, string> = {}
-        for (const response of student.responses) responseMap[response.questionId] = response.responseValue
+        for (const response of student.responses) {
+          responseMap[response.questionId] = response.responseValue
+        }
+
+        const preSurvey = student.surveyResponses.find((response) => response.phase === 'PRE') || null
+        const postSurvey = student.surveyResponses.find((response) => response.phase === 'POST') || null
+        const preMean = meanLikert(safeSurveyAnswers(preSurvey?.answers)?.likert)
+        const postMean = meanLikert(safeSurveyAnswers(postSurvey?.answers)?.likert)
+        const meanDelta =
+          typeof preMean === 'number' && typeof postMean === 'number'
+            ? Math.round((postMean - preMean) * 100) / 100
+            : null
 
         return [
           student.id,
           student.name || '匿名',
           student.progressStatus,
+          preSurvey?.consentToResearch ? 'YES' : preSurvey ? 'NO' : '',
+          preSurvey?.consentToQuote ? 'YES' : preSurvey ? 'NO' : '',
+          preMean?.toString() ?? '',
+          postMean?.toString() ?? '',
+          meanDelta?.toString() ?? '',
           bf?.extraversion?.toString() ?? '',
           bf?.agreeableness?.toString() ?? '',
           bf?.conscientiousness?.toString() ?? '',
@@ -91,7 +130,7 @@ export async function GET(request: NextRequest) {
           bf?.openness?.toString() ?? '',
           ...questions.map((question) => responseMap[question.id] || ''),
         ]
-          .map(csvEscape)
+          .map((value) => csvEscape(value))
           .join(',')
       })
 
@@ -126,25 +165,49 @@ export async function GET(request: NextRequest) {
         themeId: question.themeId,
         text: question.questionText,
       })),
-      students: students.map((student) => ({
-        id: student.id,
-        name: student.name,
-        progressStatus: student.progressStatus,
-        bigFive: student.bigFiveResult
-          ? {
-              extraversion: student.bigFiveResult.extraversion,
-              agreeableness: student.bigFiveResult.agreeableness,
-              conscientiousness: student.bigFiveResult.conscientiousness,
-              neuroticism: student.bigFiveResult.neuroticism,
-              openness: student.bigFiveResult.openness,
-            }
-          : null,
-        responses: student.responses.map((response) => ({
-          questionId: response.questionId,
-          value: response.responseValue,
-          answeredAt: response.answeredAt.toISOString(),
-        })),
-      })),
+      students: students.map((student) => {
+        const preSurvey = student.surveyResponses
+          .filter((response) => response.phase === 'PRE')
+          .map((response) => ({
+            consentToResearch: response.consentToResearch,
+            consentToQuote: response.consentToQuote,
+            answers: safeSurveyAnswers(response.answers),
+            updatedAt: response.updatedAt.toISOString(),
+          }))[0] || null
+
+        const postSurvey = student.surveyResponses
+          .filter((response) => response.phase === 'POST')
+          .map((response) => ({
+            consentToResearch: response.consentToResearch,
+            consentToQuote: response.consentToQuote,
+            answers: safeSurveyAnswers(response.answers),
+            updatedAt: response.updatedAt.toISOString(),
+          }))[0] || null
+
+        return {
+          id: student.id,
+          name: student.name,
+          progressStatus: student.progressStatus,
+          survey: {
+            pre: preSurvey,
+            post: postSurvey,
+          },
+          bigFive: student.bigFiveResult
+            ? {
+                extraversion: student.bigFiveResult.extraversion,
+                agreeableness: student.bigFiveResult.agreeableness,
+                conscientiousness: student.bigFiveResult.conscientiousness,
+                neuroticism: student.bigFiveResult.neuroticism,
+                openness: student.bigFiveResult.openness,
+              }
+            : null,
+          responses: student.responses.map((response) => ({
+            questionId: response.questionId,
+            value: response.responseValue,
+            answeredAt: response.answeredAt.toISOString(),
+          })),
+        }
+      }),
     }
 
     return new NextResponse(JSON.stringify(exportData, null, 2), {

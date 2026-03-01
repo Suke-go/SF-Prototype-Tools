@@ -48,6 +48,28 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    const preSurvey = await prisma.sessionSurveyResponse.findUnique({
+      where: {
+        studentId_phase: {
+          studentId: student.id,
+          phase: 'PRE',
+        },
+      },
+      select: { id: true },
+    })
+
+    if (!preSurvey) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          sessionId,
+          studentId: student.id,
+          progressStatus: student.progressStatus,
+          nextPath: `/student/session/${sessionId}/survey/pre`,
+        },
+      })
+    }
+
     return NextResponse.json({
       success: true,
       data: {

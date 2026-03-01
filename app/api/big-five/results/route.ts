@@ -80,6 +80,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const preSurvey = await prisma.sessionSurveyResponse.findUnique({
+      where: {
+        studentId_phase: {
+          studentId,
+          phase: 'PRE',
+        },
+      },
+      select: { id: true },
+    })
+    if (!preSurvey) {
+      return NextResponse.json(
+        { success: false, error: { code: 'PRE_SURVEY_REQUIRED', message: '先に事前アンケートへ回答してください' } },
+        { status: 403 }
+      )
+    }
+
     const existing = await prisma.bigFiveResult.findUnique({
       where: { studentId },
       select: { id: true },

@@ -15,88 +15,163 @@ export interface UMAPResult {
   y: number
 }
 
+function createSeededRandom(seed: number) {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 export function computeUMAP(
   inputs: UMAPInput[],
   options?: {
     nNeighbors?: number
     minDist?: number
     nComponents?: number
+    seed?: number
   }
 ): UMAPResult[] {
   if (inputs.length < 2) {
-    // UMAP requires at least 2 points
-    return inputs.map((inp, i) => ({
-      studentId: inp.studentId,
-      name: inp.name,
-      isSelf: inp.isSelf,
-      x: i * 0.5,
+    // UMAP requires at least 2 points.
+    return inputs.map((input, index) => ({
+      studentId: input.studentId,
+      name: input.name,
+      isSelf: input.isSelf,
+      x: index * 0.5,
       y: 0,
     }))
   }
 
   const nNeighbors = Math.min(options?.nNeighbors ?? 15, inputs.length - 1)
   const minDist = options?.minDist ?? 0.2
+  const random = createSeededRandom(options?.seed ?? 42)
 
   const umap = new UMAP({
     nNeighbors,
     minDist,
     nComponents: options?.nComponents ?? 2,
+    random,
   })
 
-  const data = inputs.map((inp) => inp.vector)
+  const data = inputs.map((input) => input.vector)
   const embedding = umap.fit(data)
 
-  return inputs.map((inp, i) => ({
-    studentId: inp.studentId,
-    name: inp.name,
-    isSelf: inp.isSelf,
-    x: embedding[i][0],
-    y: embedding[i][1],
+  return inputs.map((input, index) => ({
+    studentId: input.studentId,
+    name: input.name,
+    isSelf: input.isSelf,
+    x: embedding[index][0],
+    y: embedding[index][1],
   }))
 }
 
-// 簡易 K-means（クラスタ数自動決定はスキップ、固定3クラスタ）
 export function kMeans(
   points: { x: number; y: number }[],
-  k: number = 3,
-  maxIter: number = 50
+  options?: {
+    k?: number
+    maxIter?: number
+    seed?: number
+  }
 ): number[] {
+  const k = options?.k ?? 3
+  const maxIter = options?.maxIter ?? 100
+  const random = createSeededRandom(options?.seed ?? 42)
+
   if (points.length === 0) return []
-  if (points.length <= k) return points.map((_, i) => i)
+  if (points.length <= k) return points.map((_, index) => index)
 
-  // ランダム初期化
-  const centroids = points.slice(0, k).map((p) => ({ x: p.x, y: p.y }))
-  let assignments = new Array(points.length).fill(0)
+  // k-means++ initialization to reduce unstable local minima.
+  const centroids: { x: number; y: number }[] = []
+  const firstIndex = Math.floor(random() * points.length)
+  centroids.push({ x: points[firstIndex].x, y: points[firstIndex].y })
 
-  for (let iter = 0; iter < maxIter; iter++) {
-    // 割り当て
-    const newAssignments = points.map((p) => {
-      let minDist = Infinity
-      let minIdx = 0
-      for (let c = 0; c < k; c++) {
-        const dx = p.x - centroids[c].x
-        const dy = p.y - centroids[c].y
+  while (centroids.length < k) {
+    const distances = points.map((point) => {
+      let minDist = Number.POSITIVE_INFINITY
+      for (const centroid of centroids) {
+        const dx = point.x - centroid.x
+        const dy = point.y - centroid.y
         const dist = dx * dx + dy * dy
-        if (dist < minDist) {
-          minDist = dist
-          minIdx = c
-        }
+        if (dist < minDist) minDist = dist
       }
-      return minIdx
+      return minDist
     })
 
-    // 収束チェック
-    const changed = newAssignments.some((a, i) => a !== assignments[i])
-    assignments = newAssignments
+    const total = distances.reduce((sum, value) => sum + value, 0)
+    if (total <= 0) {
+      const randomIndex = Math.floor(random() * points.length)
+      centroids.push({ x: points[randomIndex].x, y: points[randomIndex].y })
+      continue
+    }
+
+    let threshold = random() * total
+    let chosenIndex = points.length - 1
+    for (let index = 0; index < distances.length; index += 1) {
+      threshold -= distances[index]
+      if (threshold <= 0) {
+        chosenIndex = index
+        break
+      }
+    }
+    centroids.push({ x: points[chosenIndex].x, y: points[chosenIndex].y })
+  }
+
+  let assignments = new Array(points.length).fill(0)
+
+  for (let iteration = 0; iteration < maxIter; iteration += 1) {
+    const nextAssignments = points.map((point) => {
+      let closest = 0
+      let bestDist = Number.POSITIVE_INFINITY
+      for (let centroidIndex = 0; centroidIndex < k; centroidIndex += 1) {
+        const dx = point.x - centroids[centroidIndex].x
+        const dy = point.y - centroids[centroidIndex].y
+        const dist = dx * dx + dy * dy
+        if (dist < bestDist) {
+          bestDist = dist
+          closest = centroidIndex
+        }
+      }
+      return closest
+    })
+
+    const changed = nextAssignments.some((cluster, index) => cluster !== assignments[index])
+    assignments = nextAssignments
     if (!changed) break
 
-    // 重心更新
-    for (let c = 0; c < k; c++) {
-      const members = points.filter((_, i) => assignments[i] === c)
-      if (members.length === 0) continue
-      centroids[c] = {
-        x: members.reduce((s, p) => s + p.x, 0) / members.length,
-        y: members.reduce((s, p) => s + p.y, 0) / members.length,
+    for (let centroidIndex = 0; centroidIndex < k; centroidIndex += 1) {
+      const members = points.filter((_, pointIndex) => assignments[pointIndex] === centroidIndex)
+      if (members.length === 0) {
+        // Re-seed empty cluster to the farthest point from current centroids.
+        let farthestIndex = 0
+        let farthestDist = -1
+        for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
+          const point = points[pointIndex]
+          let minDist = Number.POSITIVE_INFINITY
+          for (const centroid of centroids) {
+            const dx = point.x - centroid.x
+            const dy = point.y - centroid.y
+            const dist = dx * dx + dy * dy
+            if (dist < minDist) minDist = dist
+          }
+          if (minDist > farthestDist) {
+            farthestDist = minDist
+            farthestIndex = pointIndex
+          }
+        }
+        centroids[centroidIndex] = {
+          x: points[farthestIndex].x,
+          y: points[farthestIndex].y,
+        }
+        continue
+      }
+
+      centroids[centroidIndex] = {
+        x: members.reduce((sum, point) => sum + point.x, 0) / members.length,
+        y: members.reduce((sum, point) => sum + point.y, 0) / members.length,
       }
     }
   }

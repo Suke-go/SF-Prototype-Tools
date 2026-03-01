@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -25,6 +25,7 @@ export default function AdminSessionDetailPage({ params }: { params: { id: strin
 
   useEffect(() => {
     let cancelled = false
+
     async function load() {
       try {
         setLoading(true)
@@ -39,6 +40,7 @@ export default function AdminSessionDetailPage({ params }: { params: { id: strin
         if (!cancelled) setLoading(false)
       }
     }
+
     void load()
     return () => {
       cancelled = true
@@ -58,7 +60,7 @@ export default function AdminSessionDetailPage({ params }: { params: { id: strin
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-body text-2xl font-bold text-admin-text-primary">セッション詳細</h1>
-          <p className="mt-1 text-sm text-admin-text-tertiary">進行管理ページです。</p>
+          <p className="mt-1 text-sm text-admin-text-tertiary">参加状況や分析画面へ移動できます。</p>
         </div>
         <div className="flex gap-2">
           <Button tone="admin" variant="secondary" onClick={() => router.push('/admin/board')}>
@@ -71,7 +73,9 @@ export default function AdminSessionDetailPage({ params }: { params: { id: strin
       </div>
 
       {error && (
-        <div className="mb-4 rounded-md border border-admin-semantic-error/30 bg-red-50 p-3 text-sm text-admin-semantic-error">{error}</div>
+        <div className="mb-4 rounded-md border border-admin-semantic-error/30 bg-red-50 p-3 text-sm text-admin-semantic-error">
+          {error}
+        </div>
       )}
 
       {session && (
@@ -95,7 +99,10 @@ export default function AdminSessionDetailPage({ params }: { params: { id: strin
           参加者一覧
         </Button>
         <Button tone="admin" onClick={() => router.push(`/admin/session/${encodeURIComponent(sessionId)}/responses`)}>
-          回答分析
+          回答分布
+        </Button>
+        <Button tone="admin" onClick={() => router.push(`/admin/session/${encodeURIComponent(sessionId)}/survey`)}>
+          教育効果アンケート
         </Button>
         <Button tone="admin" variant="secondary" onClick={() => router.push(`/admin/session/${encodeURIComponent(sessionId)}/export`)}>
           エクスポート

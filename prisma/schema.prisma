@@ -72,6 +72,7 @@ model Session {
   responses       StudentResponse[]
   opinionMappings OpinionMapping[]
   learningLogs    LearningLog[]
+  surveyResponses SessionSurveyResponse[]
 
   @@index([schoolId])
   @@index([teacherId])
@@ -168,6 +169,7 @@ model Student {
   responses       StudentResponse[]
   groupActivities GroupActivity[]
   learningLogs    LearningLog[]
+  surveyResponses SessionSurveyResponse[]
 
   @@index([schoolId])
   @@index([sessionId])
@@ -229,6 +231,11 @@ enum ResponseValue {
   UNKNOWN
 }
 
+enum SurveyPhase {
+  PRE
+  POST
+}
+
 model GroupActivity {
   id         String   @id @default(uuid())
   studentId  String
@@ -279,6 +286,26 @@ model LearningLog {
   @@index([sessionId])
   @@index([studentId])
   @@map("learning_logs")
+}
+
+model SessionSurveyResponse {
+  id                String      @id @default(uuid())
+  sessionId         String
+  studentId         String
+  phase             SurveyPhase
+  consentToResearch Boolean
+  consentToQuote    Boolean     @default(false)
+  answers           Json?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, phase])
+  @@index([sessionId, phase])
+  @@index([studentId])
+  @@map("session_survey_responses")
 }
 
 model LearningReview {

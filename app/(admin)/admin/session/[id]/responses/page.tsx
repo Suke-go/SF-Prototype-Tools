@@ -9,6 +9,7 @@ type SessionResponses = {
   sessionId: string
   questions: { id: string; order: number; text: string }[]
   students: { id: string; name: string | null; progressStatus: string }[]
+  questionDistributions?: { questionId: string; yes: number; no: number; unknown: number; unanswered: number }[]
   responseMap: Record<string, Record<string, 'YES' | 'NO' | 'UNKNOWN'>>
 }
 
@@ -43,25 +44,46 @@ export default function AdminSessionResponsesPage({ params }: { params: { id: st
 
   const rows = useMemo(() => {
     if (!data) return []
+    const distByQuestionId = new Map((data.questionDistributions || []).map((dist) => [dist.questionId, dist]))
     return data.questions.map((question) => {
+      const fromApi = distByQuestionId.get(question.id)
+      if (fromApi) {
+        const total = fromApi.yes + fromApi.no + fromApi.unknown + fromApi.unanswered || 1
+        return {
+          ...question,
+          yes: fromApi.yes,
+          no: fromApi.no,
+          unknown: fromApi.unknown,
+          unanswered: fromApi.unanswered,
+          yesPct: Math.round((fromApi.yes / total) * 100),
+          noPct: Math.round((fromApi.no / total) * 100),
+          unknownPct: Math.round((fromApi.unknown / total) * 100),
+          unansweredPct: Math.round((fromApi.unanswered / total) * 100),
+        }
+      }
+
       let yes = 0
       let no = 0
       let unknown = 0
+      let unanswered = 0
       for (const responses of Object.values(data.responseMap)) {
         const value = responses[question.id]
         if (value === 'YES') yes += 1
         else if (value === 'NO') no += 1
-        else unknown += 1
+        else if (value === 'UNKNOWN') unknown += 1
+        else unanswered += 1
       }
-      const total = yes + no + unknown || 1
+      const total = yes + no + unknown + unanswered || 1
       return {
         ...question,
         yes,
         no,
         unknown,
+        unanswered,
         yesPct: Math.round((yes / total) * 100),
         noPct: Math.round((no / total) * 100),
         unknownPct: Math.round((unknown / total) * 100),
+        unansweredPct: Math.round((unanswered / total) * 100),
       }
     })
   }, [data])
@@ -112,9 +134,11 @@ export default function AdminSessionResponsesPage({ params }: { params: { id: st
                     <div className="bg-emerald-500" style={{ width: `${row.yesPct}%` }} />
                     <div className="bg-amber-400" style={{ width: `${row.unknownPct}%` }} />
                     <div className="bg-rose-400" style={{ width: `${row.noPct}%` }} />
+                    <div className="bg-slate-500" style={{ width: `${row.unansweredPct}%` }} />
                   </div>
                   <p className="mt-2 text-xs text-admin-text-tertiary">
                     YES {row.yes} ({row.yesPct}%) / UNKNOWN {row.unknown} ({row.unknownPct}%) / NO {row.no} ({row.noPct}%)
+                    {' / '}UNANSWERED {row.unanswered} ({row.unansweredPct}%)
                   </p>
                 </div>
               ))}
