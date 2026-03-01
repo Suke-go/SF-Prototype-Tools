@@ -346,22 +346,8 @@ export default function ArticleEditorPage() {
                 <section className="ops-section ops-section-ai">
                     <h2 className="ops-heading">🤖 AI パイプライン</h2>
                     <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                        各ステップを個別に実行できます。「✨ ワンクリック全自動」でテーマを選ぶだけで全フィールドをAI生成できます。
+                        各ステップを個別に実行できます。「✨ 一括生成」はテーマを選ぶだけでDB情報を自動取得し全フィールドをAI生成します。
                     </p>
-
-                    {/* ✨ Auto-generate CTA */}
-                    <div className="mb-4 rounded-xl p-4" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(16,185,129,0.10))', border: '1px solid rgba(124,58,237,0.25)' }}>
-                        <div className="flex items-center gap-3 flex-wrap">
-                            <button onClick={() => void runAutoGenerate()}
-                                disabled={generating || !themeId}
-                                className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all ${generating ? 'ops-shimmer opacity-60' : 'bg-gradient-to-r from-purple-500 to-emerald-500 text-white hover:shadow-lg hover:shadow-purple-500/25 hover:-translate-y-0.5'} ${!themeId ? 'opacity-30 cursor-not-allowed' : ''}`}>
-                                {generating ? '✨ 全自動生成中…（60秒ほど）' : '✨ ワンクリック全自動生成'}
-                            </button>
-                            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                                {themeId ? 'テーマの情報+設問をDBから自動取得 → 全フィールドAI生成' : '↑ まずテーマを選択してください'}
-                            </span>
-                        </div>
-                    </div>
 
                     {/* Provider + Model */}
                     <div className="flex items-center gap-3 mb-3 flex-wrap">
@@ -434,10 +420,13 @@ export default function ArticleEditorPage() {
                     </div>
 
                     <div className="flex gap-2 items-center flex-wrap">
-                        <button onClick={() => void runStep()} disabled={generating || !preprocessedInput.trim()}
-                            className={`${generating ? 'ops-shimmer' : ''} ${provider === 'gemini' ? 'ops-btn-primary ops-btn-gemini' : 'ops-btn-primary'}`}
-                        >{generating ? '✨ 生成中…（30秒ほど）' : `▶ ${STEPS.find(s => s.id === pipelineStep)?.label} 実行 (${provider === 'gemini' ? 'Gemini' : 'GPT'})`}
-                        </button>
+                        <button onClick={() => pipelineStep === 'full_article' && themeId ? void runAutoGenerate() : void runStep()}
+                            disabled={generating || (pipelineStep === 'full_article' ? !themeId : !preprocessedInput.trim())}
+                            className={`${generating ? 'ops-shimmer' : ''} ${pipelineStep === 'full_article' ? 'bg-gradient-to-r from-purple-500 to-emerald-500 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:shadow-lg hover:-translate-y-0.5 transition-all' : provider === 'gemini' ? 'ops-btn-primary ops-btn-gemini' : 'ops-btn-primary'}`}
+                        >{generating ? '✨ 生成中…' : pipelineStep === 'full_article'
+                            ? `✨ 一括生成 実行 (${provider === 'gemini' ? 'Gemini' : 'GPT'})${themeId ? '' : '— テーマ未選択'}`
+                            : `▶ ${STEPS.find(s => s.id === pipelineStep)?.label} 実行 (${provider === 'gemini' ? 'Gemini' : 'GPT'})`
+                            }</button>
                         {stepOutput && (
                             <button onClick={() => { setPreprocessedInput(stepOutput); setStepOutput('') }}
                                 className="ops-btn-secondary">
@@ -462,7 +451,17 @@ export default function ArticleEditorPage() {
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                             <label className={labelCls}>テーマ (紐付け先) *</label>
-                            <select value={themeId} onChange={(e) => { setThemeId(e.target.value); void loadArticle(e.target.value) }}
+                            <select value={themeId} onChange={(e) => {
+                                const id = e.target.value
+                                setThemeId(id)
+                                void loadArticle(id)
+                                // カテゴリを自動抽出
+                                const theme = themes.find(t => t.id === id)
+                                if (theme) {
+                                    const match = theme.title.match(/^(ムーンショット目標\d+)/)
+                                    if (match) setCategory(match[1])
+                                }
+                            }}
                                 className={inputCls}>
                                 <option value="">選択してください</option>
                                 {themes.map(t => <option key={t.id} value={t.id}>{t.title} ({t._count.questions}問)</option>)}
