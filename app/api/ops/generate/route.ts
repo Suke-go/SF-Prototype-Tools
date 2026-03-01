@@ -125,12 +125,13 @@ async function callGemini(
 
 // ---------- ステップ定義 ----------
 const STEP_CONFIG: Record<string, { file: string; json: boolean; maxTokens: number }> = {
+    preprocess: { file: 'preprocess.md', json: false, maxTokens: 4000 },
     intro_sf: { file: 'intro-sf-writer.md', json: false, maxTokens: 4000 },
     meidai: { file: 'meidai.md', json: true, maxTokens: 6000 },
     meidai_review: { file: 'meidai_review.md', json: false, maxTokens: 4000 },
     article_gen: { file: 'article_gen.md', json: false, maxTokens: 6000 },
     editor: { file: 'editor.md', json: false, maxTokens: 6000 },
-    full_article: { file: 'article_generator.md', json: true, maxTokens: 6000 },
+    full_article: { file: 'article_generator.md', json: true, maxTokens: 8000 },
 }
 
 // プレースホルダー一覧

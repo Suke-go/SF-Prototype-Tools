@@ -476,6 +476,31 @@ export default function ArticleEditorPage() {
                             <label className={labelCls}>テーマ (紐付け先) *</label>
                             <select value={themeId} onChange={(e) => {
                                 const id = e.target.value
+                                if (id === '__new_theme__') {
+                                    const newTitle = prompt('新しいテーマ名を入力してください:')
+                                    if (!newTitle?.trim()) return
+                                    const newDesc = prompt('テーマの説明（任意）:') || ''
+                                    // Create theme via API
+                                    void (async () => {
+                                        try {
+                                            const res = await fetch('/api/ops', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', 'x-ops-secret': opsKey },
+                                                body: JSON.stringify({ action: 'create_theme', title: newTitle.trim(), description: newDesc.trim() || undefined }),
+                                            })
+                                            const json = await res.json()
+                                            if (!json.success) throw new Error(json.error?.message || 'テーマ作成に失敗')
+                                            setSuccess(`テーマ「${json.data.theme.title}」を作成しました`)
+                                            setThemeId(json.data.theme.id)
+                                            // Refresh themes list
+                                            void fetchData(opsKey)
+                                            // Auto-extract category
+                                            const match = newTitle.trim().match(/^(ムーンショット目標\d+)/)
+                                            if (match) setCategory(match[1])
+                                        } catch (err) { setError(err instanceof Error ? err.message : 'テーマ作成エラー') }
+                                    })()
+                                    return
+                                }
                                 setThemeId(id)
                                 void loadArticle(id)
                                 // カテゴリを自動抽出
@@ -488,6 +513,7 @@ export default function ArticleEditorPage() {
                                 className={inputCls}>
                                 <option value="">選択してください</option>
                                 {themes.map(t => <option key={t.id} value={t.id}>{t.title} ({t._count.questions}問)</option>)}
+                                <option value="__new_theme__">＋ 新しいテーマを追加...</option>
                             </select>
                         </div>
                         <div>
