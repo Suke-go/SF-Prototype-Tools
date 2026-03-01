@@ -65,8 +65,7 @@ export default function BriefingPage({ params }: { params: { sessionId: string }
   const [logs, setLogs] = useState<LogMap>({})
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [savingKey, setSavingKey] = useState<string | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [dbArticle, setDbArticle] = useState<{ title: string; subtitle?: string; content: any } | null>(null)
+  const [dbArticle, setDbArticle] = useState<{ title: string; subtitle?: string; content: Record<string, unknown> } | null>(null)
   const draftsRef = useRef<Record<string, string>>({})
 
   // ── localStorage: theme selection ──
