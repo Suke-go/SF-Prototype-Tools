@@ -72,7 +72,7 @@ export default function AdminNewSessionPage() {
     const codeOk = /^[A-Za-z0-9_-]{4,32}$/.test(sessionCode.trim())
     const maxParticipants = Number(maxParticipantsText)
     const maxOk = Number.isInteger(maxParticipants) && maxParticipants >= 1 && maxParticipants <= 200
-    const passcodeOk = /^\d{4,}$/.test(passcode.trim())
+    const passcodeOk = passcode.trim().length >= 6
     return selectedThemeIds.length > 0 && codeOk && maxOk && passcodeOk && !submitting
   }, [selectedThemeIds, sessionCode, maxParticipantsText, passcode, submitting])
 
@@ -99,9 +99,9 @@ export default function AdminNewSessionPage() {
       if (!res.ok) {
         const issueMessages = Array.isArray(json?.error?.details?.issues)
           ? json.error.details.issues
-              .map((issue: { message?: string }) => issue?.message)
-              .filter(Boolean)
-              .join(' / ')
+            .map((issue: { message?: string }) => issue?.message)
+            .filter(Boolean)
+            .join(' / ')
           : ''
         throw new Error(issueMessages || json?.error?.message || 'セッション作成に失敗しました')
       }
@@ -239,13 +239,11 @@ export default function AdminNewSessionPage() {
                     label="参加コード"
                     type="password"
                     value={passcode}
-                    onChange={(e) => setPasscode(e.target.value.replace(/\D/g, ''))}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    placeholder="4桁以上の数字（例: 2468）"
+                    onChange={(e) => setPasscode(e.target.value)}
+                    placeholder="6文字以上（例: moon25）"
                     className="border-admin-border-primary bg-admin-bg-primary text-admin-text-primary"
                   />
-                  <p className="text-xs text-admin-text-tertiary">数字のみ、4桁以上で入力してください</p>
+                  <p className="text-xs text-admin-text-tertiary">6文字以上で入力してください</p>
                 </div>
               </div>
 
