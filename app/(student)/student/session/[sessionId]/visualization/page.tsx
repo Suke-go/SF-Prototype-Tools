@@ -113,11 +113,29 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
   const [selected, setSelected] = useState<Point | null>(null)
   const [sessionData, setSessionData] = useState<SessionResponses | null>(null)
   const [showGuide, setShowGuide] = useState(false)
+  const [viewMode, setViewMode] = useState<'all' | 'group'>('all')
+  const [groupMemberIds, setGroupMemberIds] = useState<string[]>([])
+  const [groupName, setGroupName] = useState<string | null>(null)
 
   const workerRef = useRef<Worker | null>(null)
   const projectedPointsRef = useRef<ProjectedPoint[]>([])
   const moveFrameRef = useRef<number | null>(null)
   const pendingPointerRef = useRef<{ x: number; y: number } | null>(null)
+
+  // Fetch group info
+  useEffect(() => {
+    async function fetchGroup() {
+      try {
+        const res = await fetch(`/api/session/my-group?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
+        const json = await res.json()
+        if (json.success && json.data.group) {
+          setGroupMemberIds(json.data.group.members.map((m: { id: string }) => m.id))
+          setGroupName(json.data.group.name)
+        }
+      } catch { /* ignore */ }
+    }
+    void fetchGroup()
+  }, [sessionId])
 
   useEffect(() => {
     let cancelled = false
@@ -136,7 +154,11 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
         const data: SessionResponses = json.data
         if (!cancelled) setSessionData(data)
 
-        const vectors = data.vectors
+        // Filter vectors based on view mode
+        let vectors = data.vectors
+        if (viewMode === 'group' && groupMemberIds.length > 0) {
+          vectors = vectors.filter(v => groupMemberIds.includes(v.studentId) || v.isSelf)
+        }
         if (vectors.length === 0) throw new Error('回答データがありません')
 
         setStage('COMPUTE')
@@ -147,6 +169,7 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
 
         const worker = workerRef.current
         const computed: Point[] = await new Promise((resolve, reject) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const onMessage = (ev: MessageEvent<any>) => {
             if (ev.data?.type === 'result') {
               cleanup()
@@ -184,7 +207,7 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
     return () => {
       cancelled = true
     }
-  }, [sessionId, selectedThemeId])
+  }, [sessionId, selectedThemeId, viewMode, groupMemberIds])
 
   useEffect(() => {
     const key = `visualization:onboarded:${sessionId}`
@@ -575,14 +598,39 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
         onNavigate={(path) => router.push(path)}
       />
 
-      <div className="mb-6">
-        <h1 className="font-heading text-3xl font-bold text-student-text-primary">みんなの考えマップ</h1>
-        <p className="mt-1 text-sm text-student-text-tertiary">回答が似ている人ほど近くに表示されます。座標の数字そのものには意味はありません。</p>
-        <p className="mt-1 text-xs text-student-text-disabled">点にマウスを重ねるか、タップして詳細を確認できます。</p>
-        {(selectedThemeId || sessionData?.selectedThemeId) && (
-          <p className="mt-2 text-xs text-student-text-disabled">選択テーマに合わせた可視化です。</p>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="font-mono text-xs tracking-[0.22em] text-student-text-disabled">VISUALIZATION</p>
+        <h1 className="mt-2 font-heading text-3xl font-bold text-student-text-primary">みんなの考えマップ</h1>
+        <p className="mt-2 text-sm text-student-text-tertiary">回答が似ている人ほど近くに表示されます。点をタップして詳細を確認できます。</p>
+      </header>
+
+      {/* Group / All toggle */}
+      {groupMemberIds.length > 0 && (
+        <div className="mb-4 inline-flex rounded-lg border border-student-border-primary bg-student-bg-secondary p-1">
+          <button
+            onClick={() => { setViewMode('all'); setLoading(true) }}
+            className={[
+              'rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
+              viewMode === 'all'
+                ? 'bg-student-text-primary text-black'
+                : 'text-student-text-tertiary hover:text-student-text-primary',
+            ].join(' ')}
+          >
+            全体
+          </button>
+          <button
+            onClick={() => { setViewMode('group'); setLoading(true) }}
+            className={[
+              'rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
+              viewMode === 'group'
+                ? 'bg-student-text-primary text-black'
+                : 'text-student-text-tertiary hover:text-student-text-primary',
+            ].join(' ')}
+          >
+            {groupName || 'グループ'}
+          </button>
+        </div>
+      )}
 
       {showGuide && (
         <Card className="mb-4 border border-student-border-primary bg-student-bg-secondary p-4">
@@ -617,32 +665,7 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
         </Card>
       )}
 
-      {sessionData?.surveyStatus?.consentToResearch && !sessionData.surveyStatus.postCompleted && (
-        <Card className="mb-4 border border-student-border-primary bg-student-bg-secondary p-4">
-          <CardContent>
-            <h2 className="text-sm font-semibold text-student-text-primary">授業後アンケート（約3分）</h2>
-            <p className="mt-2 text-sm text-student-text-secondary">
-              授業後の変化を記録すると、次回の授業改善と研究分析に役立ちます。
-            </p>
-            <Button
-              className="mt-3"
-              size="sm"
-              onClick={() => router.push(`/student/session/${encodeURIComponent(sessionId)}/survey/post`)}
-            >
-              回答する
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
-      {sessionData?.surveyStatus?.consentToResearch && sessionData.surveyStatus.postCompleted && (
-        <Card className="mb-4 border border-student-border-primary bg-student-bg-secondary p-4">
-          <CardContent>
-            <h2 className="text-sm font-semibold text-student-text-primary">授業後アンケート</h2>
-            <p className="mt-2 text-sm text-student-text-secondary">回答済みです。協力ありがとうございます。</p>
-          </CardContent>
-        </Card>
-      )}
 
       {umapResults.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
@@ -825,7 +848,7 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
         </div>
       </section>
 
-      <div className="mt-6 flex gap-3">
+      <div className="mt-6 flex flex-wrap gap-3">
         <Button
           variant="secondary"
           onClick={() => {
@@ -836,6 +859,11 @@ export default function VisualizationPage({ params }: { params: { sessionId: str
           }}
         >
           回答完了画面に戻る
+        </Button>
+        <Button
+          onClick={() => router.push(`/student/session/${encodeURIComponent(sessionId)}/survey/post`)}
+        >
+          アンケートへ進む →
         </Button>
       </div>
     </main>

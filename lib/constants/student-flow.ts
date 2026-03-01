@@ -7,6 +7,7 @@ export const STUDENT_FLOW_ORDER = [
   'briefing',
   'questions',
   'visualization',
+  'survey',
 ] as const
 
 export type StudentFlowKey = (typeof STUDENT_FLOW_ORDER)[number]
@@ -19,6 +20,7 @@ export function buildStudentSteps(sessionId: string): StepDef[] {
     { key: 'briefing', label: '読み物', path: `/student/session/${sessionId}/briefing` },
     { key: 'questions', label: '質問回答', path: `/student/session/${sessionId}/questions` },
     { key: 'visualization', label: '意見マップ', path: `/student/session/${sessionId}/visualization` },
+    { key: 'survey', label: 'アンケート', path: `/student/session/${sessionId}/survey/post` },
   ]
 }
 
@@ -26,3 +28,4 @@ export function completedStepKeys(currentKey: StudentFlowKey): string[] {
   const index = STUDENT_FLOW_ORDER.indexOf(currentKey)
   return STUDENT_FLOW_ORDER.slice(0, Math.max(index, 0))
 }
+
