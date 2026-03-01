@@ -73,6 +73,8 @@ model Session {
   opinionMappings OpinionMapping[]
   learningLogs    LearningLog[]
   surveyResponses SessionSurveyResponse[]
+  topicPreferences TopicPreference[]
+  studentGroups   StudentGroup[]
 
   @@index([schoolId])
   @@index([teacherId])
@@ -107,6 +109,8 @@ model Theme {
   sessionOptions  SessionTheme[]
   questions       Question[]
   article         Article?
+  topicPreferences TopicPreference[]
+  studentGroups   StudentGroup[]
 
   @@index([status])
   @@map("themes")
@@ -193,6 +197,8 @@ model Student {
   groupActivities GroupActivity[]
   learningLogs    LearningLog[]
   surveyResponses SessionSurveyResponse[]
+  topicPreferences TopicPreference[]
+  groupMemberships StudentGroupMember[]
 
   @@index([schoolId])
   @@index([sessionId])
@@ -379,3 +385,53 @@ model InviteCode {
   @@index([expiresAt])
   @@map("invite_codes")
 }
+
+// ===== Auto-Grouping =====
+
+model TopicPreference {
+  id        String   @id @default(uuid())
+  studentId String
+  sessionId String
+  themeId   String
+  rank      Int      // 1 = 第1希望, 2 = 第2希望
+  createdAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  theme   Theme   @relation(fields: [themeId], references: [id])
+
+  @@unique([studentId, sessionId, rank])
+  @@index([sessionId])
+  @@index([themeId])
+  @@map("topic_preferences")
+}
+
+model StudentGroup {
+  id        String   @id @default(uuid())
+  sessionId String
+  name      String   @db.VarChar(100)
+  themeId   String
+  createdAt DateTime @default(now())
+
+  session Session              @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  theme   Theme                @relation(fields: [themeId], references: [id])
+  members StudentGroupMember[]
+
+  @@index([sessionId])
+  @@map("student_groups")
+}
+
+model StudentGroupMember {
+  id        String   @id @default(uuid())
+  groupId   String
+  studentId String
+  joinedAt  DateTime @default(now())
+
+  group   StudentGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  student Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, studentId])
+  @@index([studentId])
+  @@map("student_group_members")
+}
+
